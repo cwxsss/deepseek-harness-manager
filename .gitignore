@@ -1,0 +1,21 @@
+# .NET build output
+**/bin/
+**/obj/
+
+# Node.js runtime and dependency caches
+**/node_modules/
+Installer/payload/node-runtime/
+Installer/payload/node-runtime.tar
+
+# Generated distribution files and local state
+Installer/payload/DeepSeek Harness 控制台.exe
+*.log
+*.state.json
+*.bak-*
+
+# IDE and operating-system files
+.vs/
+.vscode/
+*.user
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AssemblyName>DeepSeek Harness 控制台</AssemblyName>
+    <ApplicationIcon>assets\deepseek-official-website.ico</ApplicationIcon>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\Installer\Install-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Install.ps1" />
+    <EmbeddedResource Include="..\Installer\payload\launcher\Launcher.Common.ps1" LogicalName="HarnessControl.Resources.Launcher.Common.ps1" />
+    <EmbeddedResource Include="..\Installer\payload\launcher\Start-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Start.ps1" />
+    <EmbeddedResource Include="..\Installer\payload\launcher\Stop-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Stop.ps1" />
+    <EmbeddedResource Include="..\Installer\payload\launcher\Update-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Update.ps1" />
+    <EmbeddedResource Include="..\Installer\payload\plugins\sss-dsh-billing-0.1.2.tgz" LogicalName="HarnessControl.Resources.billing.tgz" />
+    <EmbeddedResource Include="..\Installer\payload\plugins\sss-dsh-codex-reasoning-0.1.1.tgz" LogicalName="HarnessControl.Resources.codex-reasoning.tgz" />
+  </ItemGroup>
+</Project>
