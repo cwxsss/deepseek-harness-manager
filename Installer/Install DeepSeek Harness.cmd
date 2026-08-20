@@ -10,7 +10,7 @@ echo   Keep this window open. Installation progress is shown here.
 echo ==========================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-DeepSeekHarness.ps1"
+pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-DeepSeekHarness.ps1"
 set "RESULT=%ERRORLEVEL%"
 
 echo.
