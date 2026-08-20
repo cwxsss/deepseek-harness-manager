@@ -20,7 +20,7 @@ The repository deliberately excludes generated binaries, Node.js runtimes, depen
 
 ## Build
 
-Requirements: Windows and the .NET 10 SDK.
+Requirements: Windows, PowerShell 7 (`pwsh.exe`), and the .NET 10 SDK.
 
 ```powershell
 dotnet build .\HarnessControl\HarnessControl.csproj -c Release
@@ -28,7 +28,9 @@ dotnet build .\HarnessControl\HarnessControl.csproj -c Release
 
 ## Safety model
 
-The updater treats a successful homepage response as necessary but insufficient. It also checks the client JavaScript for each plugin explicitly enabled by the active Web profile. If an update cannot pass the checks, it restores the saved `package.json`, lock files, and workspace configuration, reinstalls the previous dependency graph, and starts the recovered service.
+The updater treats a successful homepage response as necessary but insufficient. It also checks the client JavaScript for each plugin explicitly enabled by the active Web profile. It discovers the highest published release instead of relying only on the npm `latest` tag, so prereleases such as `rc.8` are not missed. It normalizes the `node-pty` build allowlist required by the Web profile. If an update cannot pass the checks, it restores the saved `package.json`, lock files, and workspace configuration, reinstalls the previous dependency graph, and starts the recovered service.
+
+The manager and installer require PowerShell 7 and no longer fall back to Windows PowerShell 5.1. This avoids UTF-8 script and JSON parsing failures on Windows.
 
 ## Notes
 

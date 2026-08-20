@@ -528,9 +528,11 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
     private static string ResolvePowerShell()
     {
         var powerShell7 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "pwsh.exe");
-        return File.Exists(powerShell7)
-            ? powerShell7
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
+        if (!File.Exists(powerShell7))
+        {
+            throw new InvalidOperationException("未找到 PowerShell 7，请先安装 PowerShell 7（pwsh.exe）。");
+        }
+        return powerShell7;
     }
 
     private void Append(string text)

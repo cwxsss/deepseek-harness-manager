@@ -10,7 +10,7 @@ echo   Fixing launcher scripts and restarting the local service.
 echo ==========================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-DeepSeekHarness.ps1" -Repair
+pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-DeepSeekHarness.ps1" -Repair
 set "RESULT=%ERRORLEVEL%"
 
 echo.
