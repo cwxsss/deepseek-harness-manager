@@ -14,6 +14,7 @@ Installer/payload/DeepSeek Harness 控制台.exe
 *.bak-*
 
 # IDE and operating-system files
+.worktrees/
 .vs/
 .vscode/
 *.user
