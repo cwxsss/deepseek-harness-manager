@@ -2,6 +2,8 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $PSScriptRoot 'Version.Common.Tests.ps1')
+& (Join-Path $PSScriptRoot 'Install.Completion.Tests.ps1')
+& (Join-Path $PSScriptRoot 'Install.Target.Tests.ps1')
 
 $installerPath = Join-Path $repoRoot 'Installer\Install-DeepSeekHarness.ps1'
 $tokens = $null
@@ -38,7 +40,19 @@ $payloadUpdater = Get-Content -LiteralPath (Join-Path $repoRoot 'Installer\paylo
 $sourceUpdater = Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\Update-DeepSeekHarness.ps1') -Raw
 $project = Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\HarnessControl.csproj') -Raw
 $program = Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\Program.cs') -Raw
+$targetHelper = Get-Content -LiteralPath (Join-Path $repoRoot 'Installer\Install.Target.ps1') -Raw
 $wiringChecks = [ordered]@{
+    'Installer uses executable completion helper' = $installer -match 'Get-InstallServiceCompletionMessage' -and $installer -notmatch 'Write-InstallLog\s*\(if\s*\('
+    'Project embeds install completion helper' = $project -match 'HarnessControl\.Resources\.Install\.Completion\.ps1'
+    'Manager extracts install completion helper' = $program -match 'HarnessControl\.Resources\.Install\.Completion\.ps1'
+    'Installer validates existing desktop controller ownership' = $installer -match 'Test-ManagedDesktopController'
+    'Installer rejects desktop controller reparse targets' = $targetHelper -match 'Test-SafeDesktopControllerAttributes' -and $targetHelper -match 'ReparsePoint'
+    'Installer skips replacing its currently running desktop executable' = $installer -match 'Test-SameFilePath.+ManagerExecutablePath' -or ($installer -match 'ManagerExecutablePath' -and $installer -match 'Test-SameFilePath')
+    'Manager passes its quoted executable path to installer' = $program -match '-ManagerExecutablePath' -and $program -match 'QuoteProcessArgument\(Application\.ExecutablePath\)'
+    'Every manager operation preserves termination failures' = ([regex]::Matches($program, 'catch \(ProcessTerminationException ex\)')).Count -ge 3 -and $program -match 'RecordTerminationFailure\("关闭", ex\)'
+    'Delayed termination validates process identity' = (Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\PowerShellProcessRunner.cs') -Raw) -match 'StartTimeUtcTicks' -and (Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\PowerShellProcessRunner.cs') -Raw) -match 'MainModule\?\.FileName'
+    'Project embeds install target helper' = $project -match 'HarnessControl\.Resources\.Install\.Target\.ps1'
+    'Manager extracts install target helper' = $program -match 'HarnessControl\.Resources\.Install\.Target\.ps1'
     'Installer resolves latest published DSH' = $installer -match 'Get-LatestPublishedPackageVersion' -and $installer -notmatch '@deepseek-ai/dsh@0\.1\.1-rc\.1'
     'Runtime updater uses shared resolver' = $payloadUpdater -match 'Version\.Common\.ps1' -and $payloadUpdater -match 'Get-LatestPublishedPackageVersion'
     'Source updater uses shared resolver' = $sourceUpdater -match 'Version\.Common\.ps1' -and $sourceUpdater -match 'Get-LatestPublishedPackageVersion'

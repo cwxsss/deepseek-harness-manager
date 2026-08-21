@@ -3,7 +3,8 @@ param(
     [switch]$Repair,
     [string]$HarnessRoot = (Join-Path $env:LOCALAPPDATA 'DeepSeekHarness'),
     [string]$ProfileRoot = (Join-Path $env:USERPROFILE '.dsh\profiles'),
-    [string]$DesktopPath = ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory))
+    [string]$DesktopPath = ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)),
+    [string]$ManagerExecutablePath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,6 +12,8 @@ $utf8 = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
 $packageRoot = Split-Path -Parent $PSCommandPath
+. (Join-Path $packageRoot 'Install.Completion.ps1')
+. (Join-Path $packageRoot 'Install.Target.ps1')
 $payloadRoot = Join-Path $packageRoot 'payload'
 $localPluginRoot = Join-Path (Split-Path -Parent $ProfileRoot) 'local-plugins\packages'
 $desktopController = Join-Path $DesktopPath 'DeepSeek Harness 控制台.exe'
@@ -101,7 +104,10 @@ $hasPartialInstall = (Test-Path -LiteralPath $HarnessRoot) -and (Test-Path -Lite
 if ((Test-Path -LiteralPath $HarnessRoot) -or (Test-Path -LiteralPath $ProfileRoot)) {
     if (-not ($canResume -or $hasPartialInstall)) { throw "检测到已有 Harness 安装或配置。为保护现有内容，安装器不会覆盖它。" }
 }
-if ((Test-Path -LiteralPath $desktopController) -and (-not ($canResume -or $hasPartialInstall))) { throw "桌面已存在同名控制台：$desktopController。请先改名或移动该文件后重试。" }
+if ((Test-Path -LiteralPath $desktopController) -and
+    (-not (Test-ManagedDesktopController -Path $desktopController))) {
+    throw "桌面已存在非 DeepSeek Harness 管理器的同名文件：$desktopController。请先改名或移动该文件后重试。"
+}
 
 try {
     if ($canResume) { Write-InstallLog '检测到上次核心安装未完成，正在从断点继续。' } else { Write-InstallLog '解压 Node 运行环境。' }
@@ -176,7 +182,13 @@ try {
     $commonPath = Join-Path $HarnessRoot 'deepseek-harness-launcher\Launcher.Common.ps1'
     $commonContent = (Get-Content -LiteralPath $commonPath -Raw).Replace('C:\Users\chuai\AppData\Local\DeepSeekHarness', $HarnessRoot)
     [System.IO.File]::WriteAllText($commonPath, $commonContent, [System.Text.UTF8Encoding]::new($true))
-    Copy-Item -LiteralPath (Join-Path $payloadRoot 'DeepSeek Harness 控制台.exe') -Destination $desktopController -Force
+    if (-not [string]::IsNullOrWhiteSpace($ManagerExecutablePath) -and
+        (Test-SameFilePath -First $ManagerExecutablePath -Second $desktopController)) {
+        Write-InstallLog '当前管理器正在从桌面运行，保留正在使用的控制台 EXE。'
+    }
+    else {
+        Copy-Item -LiteralPath (Join-Path $payloadRoot 'DeepSeek Harness 控制台.exe') -Destination $desktopController -Force
+    }
     if (-not $NoLaunch) {
         Write-InstallLog '首次启动并验证本机服务（首次加载插件最长可能需要 120 秒）。'
         & (Join-Path $launcherRoot 'Start-DeepSeekHarness.ps1') -PassThru 2>&1 | ForEach-Object { Write-InstallLog ("启动日志：" + $_.ToString()) }
@@ -186,7 +198,7 @@ try {
     Write-InstallLog "Harness 核心版本：$coreVersion。"
     Write-InstallLog '官方 Web UI：随 Harness 核心安装。'
     Write-InstallLog '已启用插件：sss-dsh-billing 0.1.5、sss-dsh-codex-reasoning 0.1.2。'
-    Write-InstallLog (if ($NoLaunch) { '服务未启动（安装参数指定 NoLaunch）。' } else { '服务健康检查通过（HTTP 200）。' })
+    Write-InstallLog (Get-InstallServiceCompletionMessage -NoLaunch ([bool]$NoLaunch))
     Write-InstallLog '安装完成。桌面已创建“DeepSeek Harness 控制台.exe”。'
     Save-InstallReport
 }
