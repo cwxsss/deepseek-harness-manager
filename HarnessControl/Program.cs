@@ -499,6 +499,7 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
     private async Task DeleteDirectoryWithRetryAsync(string target)
     {
         Exception? lastError = null;
+        ClearReadOnlyAttributes(target);
         for (var attempt = 1; attempt <= 8; attempt++)
         {
             try
@@ -515,6 +516,29 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
             }
         }
         throw lastError ?? new IOException($"无法删除目录：{target}");
+    }
+
+    private static void ClearReadOnlyAttributes(string target)
+    {
+        var pending = new Stack<string>();
+        pending.Push(target);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            try
+            {
+                var attributes = File.GetAttributes(current);
+                if ((attributes & FileAttributes.ReparsePoint) != 0) continue;
+                if ((attributes & FileAttributes.ReadOnly) != 0)
+                    File.SetAttributes(current, attributes & ~FileAttributes.ReadOnly);
+
+                if (!Directory.Exists(current)) continue;
+                foreach (var child in Directory.EnumerateFileSystemEntries(current))
+                    pending.Push(child);
+            }
+            catch (FileNotFoundException) { }
+            catch (DirectoryNotFoundException) { }
+        }
     }
 
     private static void WriteUninstallReport(IEnumerable<string> removed, IEnumerable<string> failures)

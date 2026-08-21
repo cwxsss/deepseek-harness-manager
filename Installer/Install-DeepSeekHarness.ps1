@@ -117,7 +117,7 @@ try {
     $corepack = Join-Path $HarnessRoot 'node-runtime\node-v22.17.1-win-x64\corepack.cmd'
     $profileWorkspace = "packages:`n  - .`n`nnodeLinker: isolated`nautoInstallPeers: true`nallowBuilds:`n  '@deepseek-ai/dsh-subprocess-local': true`n  '@google/genai': true`n  koffi: true`n  node-pty: true`n  protobufjs: true"
     [System.IO.File]::WriteAllText((Join-Path $ProfileRoot 'pnpm-workspace.yaml'), $profileWorkspace, [System.Text.UTF8Encoding]::new($false))
-    & $corepack pnpm --dir $ProfileRoot add '@deepseek-ai/dsh@0.1.0-rc.7' '@deepseek-ai/cordis-plugin-group@1.0.1'
+    & $corepack pnpm --dir $ProfileRoot add '@deepseek-ai/dsh@0.1.1-rc.1' '@deepseek-ai/cordis-plugin-group@1.0.1'
     if ($LASTEXITCODE -ne 0) { throw "Harness 核心安装失败，退出码：$LASTEXITCODE" }
     & $corepack pnpm --dir $ProfileRoot rebuild --pending
     if ($LASTEXITCODE -ne 0) { throw "Harness 必需组件构建失败，退出码：$LASTEXITCODE" }

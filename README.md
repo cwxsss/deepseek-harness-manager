@@ -32,6 +32,8 @@ The updater treats a successful homepage response as necessary but insufficient.
 
 The manager and installer require PowerShell 7 and no longer fall back to Windows PowerShell 5.1. This avoids UTF-8 script and JSON parsing failures on Windows.
 
+New installations use the official Harness baseline `0.1.1-rc.1`. The updater still discovers the highest published Harness and Web UI release, including RC versions, at update time.
+
 ## Notes
 
 This is a local-management project, not the official DeepSeek Harness distribution. The portable installer source expects release payloads (the built control executable and Node.js runtime archive) to be assembled separately; those large generated artifacts are intentionally not versioned here.
