@@ -79,8 +79,8 @@ if ($Repair) {
 
 Require-Payload (Join-Path $payloadRoot 'DeepSeek Harness 控制台.exe')
 Require-Payload (Join-Path $payloadRoot 'launcher')
-Require-Payload (Join-Path $payloadRoot 'plugins\sss-dsh-billing-0.1.2.tgz')
-Require-Payload (Join-Path $payloadRoot 'plugins\sss-dsh-codex-reasoning-0.1.1.tgz')
+Require-Payload (Join-Path $payloadRoot 'plugins\sss-dsh-billing-0.1.5.tgz')
+Require-Payload (Join-Path $payloadRoot 'plugins\sss-dsh-codex-reasoning-0.1.2.tgz')
 $nodeExecutable = Join-Path $HarnessRoot 'node-runtime\node-v22.17.1-win-x64\node.exe'
 $existingWebManifest = Join-Path $ProfileRoot 'web\package.json'
 $canResume = (Test-Path -LiteralPath $nodeExecutable) -and (Test-Path -LiteralPath (Join-Path $ProfileRoot 'package.json')) -and (-not (Test-Path -LiteralPath $existingWebManifest))
@@ -111,7 +111,7 @@ try {
     $launcherRoot = Join-Path $HarnessRoot 'deepseek-harness-launcher'
     New-Item -ItemType Directory -Path $launcherRoot -Force | Out-Null
     Get-ChildItem -LiteralPath $launcherPayload -Force | Copy-Item -Destination $launcherRoot -Recurse -Force
-    Copy-Item -LiteralPath (Join-Path $payloadRoot 'plugins\sss-dsh-billing-0.1.2.tgz'), (Join-Path $payloadRoot 'plugins\sss-dsh-codex-reasoning-0.1.1.tgz') -Destination $localPluginRoot -Force
+    Copy-Item -LiteralPath (Join-Path $payloadRoot 'plugins\sss-dsh-billing-0.1.5.tgz'), (Join-Path $payloadRoot 'plugins\sss-dsh-codex-reasoning-0.1.2.tgz') -Destination $localPluginRoot -Force
 
     Write-InstallLog '下载并安装官方 Harness、Web UI 与两个本地插件。'
     $corepack = Join-Path $HarnessRoot 'node-runtime\node-v22.17.1-win-x64\corepack.cmd'
@@ -138,8 +138,8 @@ try {
             '@linxin666/dsh-client-ui-web-ui-settings' = '0.1.20'
             '@linxin666/dsh-skins' = '0.1.20'
             '@linxin666/dsh-client-ui-skin-center' = '0.1.20'
-            'sss-dsh-billing' = 'file:' + (Join-Path $localPluginRoot 'sss-dsh-billing-0.1.2.tgz').Replace('\', '/')
-            'sss-dsh-codex-reasoning' = 'file:' + (Join-Path $localPluginRoot 'sss-dsh-codex-reasoning-0.1.1.tgz').Replace('\', '/')
+            'sss-dsh-billing' = 'file:' + (Join-Path $localPluginRoot 'sss-dsh-billing-0.1.5.tgz').Replace('\', '/')
+            'sss-dsh-codex-reasoning' = 'file:' + (Join-Path $localPluginRoot 'sss-dsh-codex-reasoning-0.1.2.tgz').Replace('\', '/')
         }
         dsh = @{ profile = @{ bundles = @('@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'sss-dsh-billing', 'sss-dsh-codex-reasoning', '@linxin666/dsh-web-ui-all') } }
     }
@@ -167,7 +167,7 @@ try {
     $webVersion = (Get-Content -LiteralPath (Join-Path $webRoot 'package.json') -Raw | ConvertFrom-Json).dependencies.'@linxin666/dsh-web-ui-all'
     Write-InstallLog "Harness 核心版本：$coreVersion。"
     Write-InstallLog "Web UI 版本：$webVersion。"
-    Write-InstallLog '已启用插件：sss-dsh-billing 0.1.2、sss-dsh-codex-reasoning 0.1.1。'
+    Write-InstallLog '已启用插件：sss-dsh-billing 0.1.5、sss-dsh-codex-reasoning 0.1.2。'
     Write-InstallLog (if ($NoLaunch) { '服务未启动（安装参数指定 NoLaunch）。' } else { '服务健康检查通过（HTTP 200）。' })
     Write-InstallLog '安装完成。桌面已创建“DeepSeek Harness 控制台.exe”。'
     Save-InstallReport

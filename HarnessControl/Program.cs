@@ -452,8 +452,8 @@ internal sealed class MainForm : Form
         ExtractResource("HarnessControl.Resources.Start.ps1", Path.Combine(launcher, "Start-DeepSeekHarness.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Stop.ps1", Path.Combine(launcher, "Stop-DeepSeekHarness.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Update.ps1", Path.Combine(launcher, "Update-DeepSeekHarness.ps1"), textFile: true);
-        ExtractResource("HarnessControl.Resources.billing.tgz", Path.Combine(plugins, "sss-dsh-billing-0.1.2.tgz"), textFile: false);
-        ExtractResource("HarnessControl.Resources.codex-reasoning.tgz", Path.Combine(plugins, "sss-dsh-codex-reasoning-0.1.1.tgz"), textFile: false);
+        ExtractResource("HarnessControl.Resources.billing.tgz", Path.Combine(plugins, "sss-dsh-billing-0.1.5.tgz"), textFile: false);
+        ExtractResource("HarnessControl.Resources.codex-reasoning.tgz", Path.Combine(plugins, "sss-dsh-codex-reasoning-0.1.2.tgz"), textFile: false);
         File.Copy(Application.ExecutablePath, Path.Combine(payload, "DeepSeek Harness 控制台.exe"), overwrite: true);
         return Path.Combine(SupportRoot, "Install-DeepSeekHarness.ps1");
     }

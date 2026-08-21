@@ -18,7 +18,7 @@
     <EmbeddedResource Include="..\Installer\payload\launcher\Start-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Start.ps1" />
     <EmbeddedResource Include="..\Installer\payload\launcher\Stop-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Stop.ps1" />
     <EmbeddedResource Include="..\Installer\payload\launcher\Update-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Update.ps1" />
-    <EmbeddedResource Include="..\Installer\payload\plugins\sss-dsh-billing-0.1.2.tgz" LogicalName="HarnessControl.Resources.billing.tgz" />
-    <EmbeddedResource Include="..\Installer\payload\plugins\sss-dsh-codex-reasoning-0.1.1.tgz" LogicalName="HarnessControl.Resources.codex-reasoning.tgz" />
+    <EmbeddedResource Include="..\Installer\payload\plugins\sss-dsh-billing-0.1.5.tgz" LogicalName="HarnessControl.Resources.billing.tgz" />
+    <EmbeddedResource Include="..\Installer\payload\plugins\sss-dsh-codex-reasoning-0.1.2.tgz" LogicalName="HarnessControl.Resources.codex-reasoning.tgz" />
   </ItemGroup>
 </Project>
