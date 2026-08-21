@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $PSScriptRoot 'Version.Common.Tests.ps1')
+& (Join-Path $PSScriptRoot 'Install.Completion.Tests.ps1')
 
 $installerPath = Join-Path $repoRoot 'Installer\Install-DeepSeekHarness.ps1'
 $tokens = $null
@@ -39,6 +40,9 @@ $sourceUpdater = Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\U
 $project = Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\HarnessControl.csproj') -Raw
 $program = Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\Program.cs') -Raw
 $wiringChecks = [ordered]@{
+    'Installer uses executable completion helper' = $installer -match 'Get-InstallServiceCompletionMessage' -and $installer -notmatch 'Write-InstallLog\s*\(if\s*\('
+    'Project embeds install completion helper' = $project -match 'HarnessControl\.Resources\.Install\.Completion\.ps1'
+    'Manager extracts install completion helper' = $program -match 'HarnessControl\.Resources\.Install\.Completion\.ps1'
     'Installer resolves latest published DSH' = $installer -match 'Get-LatestPublishedPackageVersion' -and $installer -notmatch '@deepseek-ai/dsh@0\.1\.1-rc\.1'
     'Runtime updater uses shared resolver' = $payloadUpdater -match 'Version\.Common\.ps1' -and $payloadUpdater -match 'Get-LatestPublishedPackageVersion'
     'Source updater uses shared resolver' = $sourceUpdater -match 'Version\.Common\.ps1' -and $sourceUpdater -match 'Get-LatestPublishedPackageVersion'

@@ -11,6 +11,7 @@ $utf8 = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
 $packageRoot = Split-Path -Parent $PSCommandPath
+. (Join-Path $packageRoot 'Install.Completion.ps1')
 $payloadRoot = Join-Path $packageRoot 'payload'
 $localPluginRoot = Join-Path (Split-Path -Parent $ProfileRoot) 'local-plugins\packages'
 $desktopController = Join-Path $DesktopPath 'DeepSeek Harness 控制台.exe'
@@ -186,7 +187,7 @@ try {
     Write-InstallLog "Harness 核心版本：$coreVersion。"
     Write-InstallLog '官方 Web UI：随 Harness 核心安装。'
     Write-InstallLog '已启用插件：sss-dsh-billing 0.1.5、sss-dsh-codex-reasoning 0.1.2。'
-    Write-InstallLog (if ($NoLaunch) { '服务未启动（安装参数指定 NoLaunch）。' } else { '服务健康检查通过（HTTP 200）。' })
+    Write-InstallLog (Get-InstallServiceCompletionMessage -NoLaunch ([bool]$NoLaunch))
     Write-InstallLog '安装完成。桌面已创建“DeepSeek Harness 控制台.exe”。'
     Save-InstallReport
 }
