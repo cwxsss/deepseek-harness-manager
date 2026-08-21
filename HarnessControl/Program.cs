@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using System.Reflection;
 using System.Text;
@@ -38,7 +37,6 @@ internal sealed class MainForm : Form
     };
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private CancellationTokenSource? _activeCancellation;
-    private Process? _activeProcess;
     private string? _activeAction;
     private bool _stopInProgress;
 
@@ -374,52 +372,21 @@ internal sealed class MainForm : Form
             return 1;
         }
 
-        var info = new ProcessStartInfo
-        {
-            FileName = ResolvePowerShell(),
-            Arguments = $"-NoProfile -OutputFormat Text -ExecutionPolicy Bypass -File \"{scriptPath}\" {arguments}",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = new UTF8Encoding(false),
-            StandardErrorEncoding = new UTF8Encoding(false),
-            CreateNoWindow = true,
-        };
-        using var process = Process.Start(info) ?? throw new InvalidOperationException("无法启动 PowerShell。");
-        _activeProcess = process;
-        process.OutputDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Append(eventArgs.Data); };
-        process.ErrorDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Append($"[命令输出] {eventArgs.Data}"); };
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-
         var token = cancellationToken ?? _activeCancellation?.Token ?? CancellationToken.None;
-        CancellationTokenRegistration? cancellationRegistration = token.CanBeCanceled
-            ? token.Register(() => TryStopProcess(process))
-            : null;
-        try
+        var runner = new PowerShellProcessRunner(ResolvePowerShell(), Append);
+        var runTask = runner.RunAsync(scriptPath, arguments, action, TimeSpan.FromMinutes(15), token);
+        while (!runTask.IsCompleted)
         {
-            var startedAt = DateTimeOffset.Now;
-            while (!process.HasExited)
-            {
-                await Task.Delay(500);
-                if (action == "启动" && await GetHarnessHttpStatusAsync() == 200)
-                {
-                    Append("服务健康检查通过（HTTP 200），启动操作已完成。管理器已恢复其他操作按钮。");
-                    TryStopProcessOnly(process);
-                    return 0;
-                }
-                await RefreshStatusAsync();
-                if ((DateTimeOffset.Now - startedAt).TotalMinutes >= 15)
-                {
-                    TryStopProcess(process);
-                    throw new TimeoutException($"{action}超过 15 分钟仍未完成，已中止本次操作。请查看日志后重试。");
-                }
-            }
-            await process.WaitForExitAsync();
-            if (process.ExitCode != 0) AppendHarnessDiagnostics();
-            return process.ExitCode;
+            await Task.WhenAny(runTask, Task.Delay(500));
+            if (!runTask.IsCompleted) await RefreshStatusAsync();
         }
-        finally { cancellationRegistration?.Dispose(); }
+
+        var result = await runTask;
+        if (result.Reason == ProcessCompletionReason.TimedOut)
+            throw new TimeoutException($"{action}超过 15 分钟仍未完成，已中止本次操作。请查看日志后重试。");
+        if (result.ExitCode != 0 && result.Reason != ProcessCompletionReason.Cancelled)
+            AppendHarnessDiagnostics();
+        return result.ExitCode;
     }
 
     private void AppendHarnessDiagnostics()
@@ -608,7 +575,6 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
         _activeAction = null;
         _activeCancellation?.Dispose();
         _activeCancellation = null;
-        _activeProcess = null;
         if (_stopInProgress)
         {
             _status.Text = "状态：正在关闭…";
@@ -638,18 +604,6 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
         _update.Enabled = true;
         _uninstall.Enabled = true;
         _hint.Text = "安装和卸载会显示确认；操作过程均写入下方日志和桌面报告。";
-    }
-
-    private static void TryStopProcess(Process process)
-    {
-        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-        catch { }
-    }
-
-    private static void TryStopProcessOnly(Process process)
-    {
-        try { if (!process.HasExited) process.Kill(entireProcessTree: false); }
-        catch { }
     }
 
     private static string ResolvePowerShell()
