@@ -13,11 +13,15 @@
 ## 文件结构
 
 - 创建 `Installer/Install.Completion.ps1`：返回安装成功尾部的服务状态文案，供安装器和行为测试共同调用。
+- 创建 `Installer/Install.Target.ps1`：仅允许覆盖产品元数据匹配的旧桌面管理器，保护无关同名文件。
 - 修改 `Installer/Install-DeepSeekHarness.ps1`：加载完成文案助手，替换错误的内联 `if`。
 - 修改 `HarnessControl/HarnessControl.csproj`：编译新增 C# 文件并嵌入安装完成助手。
 - 修改 `HarnessControl/Program.cs`：调用独立进程执行器、渲染统一操作状态、释放新增嵌入资源。
 - 创建 `HarnessControl/PowerShellProcessRunner.cs`：启动 PowerShell、实时转发输出、以直接进程退出为准、有界结束输出读取、处理取消和超时。
 - 创建 `HarnessControl/OperationUiState.cs`：定义操作阶段和按钮可用性映射。
+- 创建 `HarnessControl/InstallationCondition.cs`：区分未安装、残缺安装和完整安装，防止残缺安装丢失修复入口。
+- 创建 `HarnessControl/OperationExecutionCoordinator.cs`：保证成功、失败、异常、超时和取消均执行一次最终收尾。
+- 创建 `HarnessControl/OperationStopCoordinator.cs`：让取消后的关闭等待原操作释放同一个 gate。
 - 创建 `HarnessControl/Properties/AssemblyInfo.cs`：向测试程序集开放内部类型。
 - 创建 `HarnessControl.Tests/HarnessControl.Tests.csproj`：不依赖第三方测试包的 Windows 控制台测试项目。
 - 创建 `HarnessControl.Tests/Program.cs`：运行进程生命周期和按钮状态行为测试。
@@ -25,6 +29,7 @@
 - 创建 `tests/fixtures/ExitWithCode.ps1`：输出日志后返回指定非零退出码。
 - 创建 `tests/fixtures/WaitUntilCancelled.ps1`：供取消和超时测试使用。
 - 创建 `tests/Install.Completion.Tests.ps1`：执行安装尾部的两个真实生产分支。
+- 创建 `tests/Install.Target.Tests.ps1`：验证旧管理器可安全替换、无关同名文件会被拒绝。
 - 修改 `tests/Verify-Installer.ps1`：接入安装完成行为测试并验证嵌入/释放接线。
 - 创建 `tests/Run-All.ps1`：本地和 CI 共用的脚本测试、.NET 测试、构建、发布及单 EXE 形态门禁。
 - 创建 `tests/Verify-RealInstall.ps1`：显式确认后启动新 EXE，通过 UI Automation 完成一次真实安装并断言状态与按钮。
@@ -233,13 +238,13 @@ Assert(!running.Install && !running.Start && running.Stop && !running.Update && 
 
 foreach (var outcome in new[] { "success", "failure", "exception", "timeout", "cancelled" })
 {
-    var idle = OperationUiState.ForIdle(installed: true, httpStatus: 200);
-    Assert(!idle.Install && !idle.Start && idle.Stop && idle.Update && idle.Uninstall,
-        $"{outcome} 收尾后运行中的 Harness 必须允许关闭、更新和卸载");
+    var idle = OperationUiState.ForIdle(InstallationCondition.Complete, httpStatus: 200);
+    Assert(idle.Install && !idle.Start && idle.Stop && idle.Update && idle.Uninstall,
+        $"{outcome} 收尾后运行中的 Harness 必须允许重新安装、关闭、更新和卸载");
 }
 ```
 
-另测 `ForIdle(installed:false,httpStatus:0)` 启用安装、禁用启动/关闭/更新/卸载，以及 `ForIdle(installed:true,httpStatus:0)` 启用启动和卸载。
+另测 `ForIdle(InstallationCondition.None, 0)` 只启用安装；`Incomplete` 启用修复安装和卸载；`Complete, 0` 启用重新安装、启动、更新和卸载。取消后关闭用例必须断言 Stopping 优先且关闭操作等待原操作 gate。
 
 - [ ] **步骤 2：运行红灯**
 
@@ -261,7 +266,7 @@ internal sealed record OperationUiState(
     string Status, string Hint);
 ```
 
-提供 `ForRunning(bool allowStop)`、`ForStopping()`、`ForIdle(bool installed, int httpStatus)`。`MainForm` 新增唯一 `ApplyUiState(OperationUiState state)` 设置五个按钮、状态和提示；`BeginOperation`、`SetStoppingUi`、`EndOperation/RefreshStatusAsync` 不再各自散落设置控件。
+提供 `ForRunning(bool allowStop)`、`ForStopping()`、`ForActivity(...)`、`ForIdle(InstallationCondition, int httpStatus)`。`MainForm` 新增唯一 `ApplyUiState(OperationUiState state)` 设置五个按钮、状态和提示；`BeginOperation`、`SetStoppingUi`、`EndOperation/RefreshStatusAsync` 不再各自散落设置控件。`OperationExecutionCoordinator` 统一最终收尾，`OperationStopCoordinator` 串行化取消后的关闭。
 
 - [ ] **步骤 4：保证异常刷新也释放操作锁**
 

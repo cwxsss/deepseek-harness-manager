@@ -12,6 +12,7 @@ $utf8 = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = $utf8
 $packageRoot = Split-Path -Parent $PSCommandPath
 . (Join-Path $packageRoot 'Install.Completion.ps1')
+. (Join-Path $packageRoot 'Install.Target.ps1')
 $payloadRoot = Join-Path $packageRoot 'payload'
 $localPluginRoot = Join-Path (Split-Path -Parent $ProfileRoot) 'local-plugins\packages'
 $desktopController = Join-Path $DesktopPath 'DeepSeek Harness 控制台.exe'
@@ -102,7 +103,11 @@ $hasPartialInstall = (Test-Path -LiteralPath $HarnessRoot) -and (Test-Path -Lite
 if ((Test-Path -LiteralPath $HarnessRoot) -or (Test-Path -LiteralPath $ProfileRoot)) {
     if (-not ($canResume -or $hasPartialInstall)) { throw "检测到已有 Harness 安装或配置。为保护现有内容，安装器不会覆盖它。" }
 }
-if ((Test-Path -LiteralPath $desktopController) -and (-not ($canResume -or $hasPartialInstall))) { throw "桌面已存在同名控制台：$desktopController。请先改名或移动该文件后重试。" }
+if ((Test-Path -LiteralPath $desktopController) -and
+    (-not ($canResume -or $hasPartialInstall)) -and
+    (-not (Test-ManagedDesktopController -Path $desktopController))) {
+    throw "桌面已存在非 DeepSeek Harness 管理器的同名文件：$desktopController。请先改名或移动该文件后重试。"
+}
 
 try {
     if ($canResume) { Write-InstallLog '检测到上次核心安装未完成，正在从断点继续。' } else { Write-InstallLog '解压 Node 运行环境。' }

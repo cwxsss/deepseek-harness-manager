@@ -196,6 +196,10 @@ catch {
 finally {
     if ($null -ne $process -and -not $process.HasExited) {
         [void]$process.CloseMainWindow()
-        [void]$process.WaitForExit(5000)
+        if (-not $process.WaitForExit(5000)) {
+            Write-Warning "候选管理器未在五秒内关闭，正在精确结束测试创建的 PID $($process.Id)。"
+            Stop-Process -Id $process.Id -Force -ErrorAction Stop
+            [void]$process.WaitForExit(5000)
+        }
     }
 }

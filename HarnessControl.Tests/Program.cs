@@ -28,14 +28,17 @@ if (group is "all" or "timeout")
 if (group is "all" or "ui-state")
 {
     TestOperationUiStates();
-    passed += 5;
+    TestInstallationConditionDetection();
+    await TestStopWaitsForActiveOperationAsync();
+    await TestFinalizationForEveryOutcomeAsync();
+    passed += 16;
 }
 if (passed == 0) throw new InvalidOperationException($"Unknown test group: {group}");
 Console.WriteLine($"Process runner tests passed ({passed} checks).");
 
 static async Task TestRetainedOutputHandleAsync()
 {
-    var repoRoot = Directory.GetCurrentDirectory();
+    var repoRoot = FindRepoRoot();
     var fixture = Path.Combine(repoRoot, "tests", "fixtures", "RetainedOutputHandle.ps1");
     var testRoot = Path.Combine(Path.GetTempPath(), $"dsh-process-runner-{Guid.NewGuid():N}");
     var pidFile = Path.Combine(testRoot, "child.pid");
@@ -76,7 +79,7 @@ static async Task TestRetainedOutputHandleAsync()
 
 static async Task TestNonZeroExitCodeAsync()
 {
-    var fixture = Path.Combine(Directory.GetCurrentDirectory(), "tests", "fixtures", "ExitWithCode.ps1");
+    var fixture = Path.Combine(FindRepoRoot(), "tests", "fixtures", "ExitWithCode.ps1");
     var runner = new PowerShellProcessRunner(ResolvePowerShell(), _ => { });
     var result = await runner.RunAsync(
         fixture,
@@ -91,7 +94,7 @@ static async Task TestNonZeroExitCodeAsync()
 
 static async Task TestCancellationAsync()
 {
-    var fixture = Path.Combine(Directory.GetCurrentDirectory(), "tests", "fixtures", "WaitUntilCancelled.ps1");
+    var fixture = Path.Combine(FindRepoRoot(), "tests", "fixtures", "WaitUntilCancelled.ps1");
     using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
     var runner = new PowerShellProcessRunner(ResolvePowerShell(), _ => { });
     var stopwatch = Stopwatch.StartNew();
@@ -109,7 +112,7 @@ static async Task TestCancellationAsync()
 
 static async Task TestTimeoutAsync()
 {
-    var fixture = Path.Combine(Directory.GetCurrentDirectory(), "tests", "fixtures", "WaitUntilCancelled.ps1");
+    var fixture = Path.Combine(FindRepoRoot(), "tests", "fixtures", "WaitUntilCancelled.ps1");
     var runner = new PowerShellProcessRunner(ResolvePowerShell(), _ => { });
     var stopwatch = Stopwatch.StartNew();
     var result = await runner.RunAsync(
@@ -134,20 +137,126 @@ static void TestOperationUiStates()
     Assert(!stopping.Install && !stopping.Start && !stopping.Stop && !stopping.Update && !stopping.Uninstall,
         "正在关闭时所有按钮必须暂时禁用");
 
-    var installedAndRunning = OperationUiState.ForIdle(installed: true, httpStatus: 200);
-    Assert(!installedAndRunning.Install && !installedAndRunning.Start && installedAndRunning.Stop &&
+    var installedAndRunning = OperationUiState.ForIdle(InstallationCondition.Complete, httpStatus: 200);
+    Assert(installedAndRunning.Install && !installedAndRunning.Start && installedAndRunning.Stop &&
            installedAndRunning.Update && installedAndRunning.Uninstall,
-        "安装完成并运行后必须启用关闭、更新和卸载");
+        "安装完成并运行后必须启用重新安装、关闭、更新和卸载");
     Assert(!installedAndRunning.Status.Contains("正在", StringComparison.Ordinal), "安装完成后状态不得残留正在操作文案");
 
-    var installedAndStopped = OperationUiState.ForIdle(installed: true, httpStatus: 0);
-    Assert(!installedAndStopped.Install && installedAndStopped.Start && !installedAndStopped.Stop &&
+    var installedAndStopped = OperationUiState.ForIdle(InstallationCondition.Complete, httpStatus: 0);
+    Assert(installedAndStopped.Install && installedAndStopped.Start && !installedAndStopped.Stop &&
            installedAndStopped.Update && installedAndStopped.Uninstall,
-        "已安装但未运行时必须启用启动、更新和卸载");
+        "已安装但未运行时必须启用重新安装、启动、更新和卸载");
 
-    var notInstalled = OperationUiState.ForIdle(installed: false, httpStatus: 0);
+    var incomplete = OperationUiState.ForIdle(InstallationCondition.Incomplete, httpStatus: 0);
+    Assert(incomplete.Install && !incomplete.Start && !incomplete.Stop && !incomplete.Update && incomplete.Uninstall,
+        "残缺安装必须保留修复安装和卸载入口，不能启用启动或更新");
+
+    var notInstalled = OperationUiState.ForIdle(InstallationCondition.None, httpStatus: 0);
     Assert(notInstalled.Install && !notInstalled.Start && !notInstalled.Stop && !notInstalled.Update && !notInstalled.Uninstall,
         "未安装时只能使用安装按钮");
+
+    var stopOverridesInstall = OperationUiState.ForActivity("安装", allowStop: true, stopInProgress: true);
+    Assert(!stopOverridesInstall.Install && !stopOverridesInstall.Start && !stopOverridesInstall.Stop &&
+           !stopOverridesInstall.Update && !stopOverridesInstall.Uninstall && stopOverridesInstall.Status.Contains("正在关闭", StringComparison.Ordinal),
+        "取消安装并关闭时，正在关闭必须覆盖正在安装且所有按钮保持禁用");
+}
+
+static async Task TestStopWaitsForActiveOperationAsync()
+{
+    using var gate = new SemaphoreSlim(1, 1);
+    await gate.WaitAsync();
+    var stopStarted = false;
+    var stopTask = OperationStopCoordinator.RunAfterActiveOperationAsync(gate, () =>
+    {
+        stopStarted = true;
+        return Task.CompletedTask;
+    });
+
+    await Task.Delay(200);
+    Assert(!stopStarted, "关闭操作不得与尚未收尾的安装/更新并行执行");
+    gate.Release();
+    await stopTask;
+    Assert(stopStarted, "原操作释放 gate 后必须执行关闭");
+    Assert(gate.Wait(0), "关闭完成后必须释放操作 gate");
+    gate.Release();
+}
+
+static void TestInstallationConditionDetection()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"dsh-install-state-{Guid.NewGuid():N}");
+    var harnessRoot = Path.Combine(root, "DeepSeekHarness");
+    var profileRoot = Path.Combine(root, "profiles");
+    var pluginRoot = Path.Combine(root, "local-plugins");
+    try
+    {
+        Assert(InstallationConditionDetector.Detect(harnessRoot, profileRoot, pluginRoot) == InstallationCondition.None,
+            "不存在任何目录时必须判定为未安装");
+
+        Directory.CreateDirectory(harnessRoot);
+        Assert(InstallationConditionDetector.Detect(harnessRoot, profileRoot, pluginRoot) == InstallationCondition.Incomplete,
+            "仅创建 Harness 根目录时必须判定为残缺安装");
+
+        foreach (var file in new[]
+        {
+            Path.Combine(harnessRoot, "node-runtime", "node-v22.17.1-win-x64", "node.exe"),
+            Path.Combine(harnessRoot, "deepseek-harness-launcher", "Start-DeepSeekHarness.ps1"),
+            Path.Combine(harnessRoot, "deepseek-harness-launcher", "Stop-DeepSeekHarness.ps1"),
+            Path.Combine(harnessRoot, "deepseek-harness-launcher", "Update-DeepSeekHarness.ps1"),
+            Path.Combine(profileRoot, "node_modules", "@deepseek-ai", "dsh", "package.json"),
+            Path.Combine(profileRoot, "web", "package.json"),
+            Path.Combine(pluginRoot, "packages", "sss-dsh-billing-0.1.5.tgz"),
+            Path.Combine(pluginRoot, "packages", "sss-dsh-codex-reasoning-0.1.2.tgz"),
+        })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, "test");
+        }
+        Assert(InstallationConditionDetector.Detect(harnessRoot, profileRoot, pluginRoot) == InstallationCondition.Complete,
+            "所有运行必需文件存在时必须判定为完整安装");
+    }
+    finally
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+}
+
+static async Task TestFinalizationForEveryOutcomeAsync()
+{
+    using var cancelled = new CancellationTokenSource();
+    cancelled.Cancel();
+    var scenarios = new (string Name, Func<Task> Operation)[]
+    {
+        ("success", () => Task.CompletedTask),
+        ("nonzero", () => Task.CompletedTask),
+        ("exception", () => Task.FromException(new InvalidOperationException("expected"))),
+        ("timeout", () => Task.FromException(new TimeoutException("expected"))),
+        ("cancelled", () => Task.FromCanceled(cancelled.Token)),
+    };
+
+    foreach (var scenario in scenarios)
+    {
+        var finalized = 0;
+        OperationUiState? finalState = null;
+        try
+        {
+            await OperationExecutionCoordinator.RunWithFinalizerAsync(
+                scenario.Operation,
+                () =>
+                {
+                    finalized++;
+                    finalState = OperationUiState.ForIdle(InstallationCondition.Complete, httpStatus: 200);
+                    return Task.CompletedTask;
+                });
+        }
+        catch (Exception) when (scenario.Name is "exception" or "timeout" or "cancelled")
+        {
+        }
+
+        Assert(finalized == 1, $"{scenario.Name} 结果必须且只能执行一次最终收尾");
+        Assert(finalState is { Install: true, Start: false, Stop: true, Update: true, Uninstall: true },
+            $"{scenario.Name} 收尾后必须恢复运行中 Harness 的重新安装、关闭、更新和卸载按钮");
+    }
 }
 
 static string ResolvePowerShell()
@@ -155,6 +264,16 @@ static string ResolvePowerShell()
     var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "pwsh.exe");
     if (!File.Exists(path)) throw new FileNotFoundException("PowerShell 7 is required for tests.", path);
     return path;
+}
+
+static string FindRepoRoot()
+{
+    for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+    {
+        if (File.Exists(Path.Combine(directory.FullName, "tests", "fixtures", "RetainedOutputHandle.ps1")))
+            return directory.FullName;
+    }
+    throw new DirectoryNotFoundException($"Unable to locate repository root from {AppContext.BaseDirectory}.");
 }
 
 static string Quote(string value) => $"\"{value.Replace("\"", "\\\"")}\"";

@@ -87,6 +87,10 @@ internal sealed class PowerShellProcessRunner
                 : ProcessCompletionReason.TimedOut;
             TryStopProcess(process);
             await Task.WhenAny(exited.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+            if (!process.HasExited)
+            {
+                throw new InvalidOperationException($"{action}已请求{(reason == ProcessCompletionReason.Cancelled ? "取消" : "超时中止")}，但 PowerShell 进程仍在运行；为避免并发操作，管理器不会恢复其他按钮。");
+            }
             var terminatedExitCode = process.HasExited ? process.ExitCode : -1;
             await DrainOutputAsync(outputClosed.Task, errorClosed.Task);
             return new PowerShellProcessResult(terminatedExitCode, reason);

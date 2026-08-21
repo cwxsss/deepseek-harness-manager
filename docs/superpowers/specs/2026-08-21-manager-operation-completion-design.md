@@ -51,8 +51,9 @@ Represent idle, running, and stopping states independently from WinForms control
 
 - Running install/update/start: only Close is enabled.
 - Stopping: all buttons are temporarily disabled.
-- Idle with Harness running: Start may be disabled as appropriate; Close and Update are enabled.
-- Idle without Harness: Install and Start follow the existing installation checks; no stale busy flag remains.
+- Idle with a complete running Harness: Reinstall, Close, Update, and Uninstall are enabled; Start is disabled.
+- Idle with an incomplete installation: Repair installation and Uninstall remain enabled, while Start and Update are disabled.
+- Idle without Harness: only Install is enabled; no stale busy flag remains.
 
 The final UI state is recalculated from installation presence and HTTP health after every operation result.
 
@@ -63,6 +64,7 @@ The final UI state is recalculated from installation presence and HTTP health af
 - Timeout and cancellation terminate the direct operation, report the reason, and always restore idle controls after status refresh.
 - Failure to refresh HTTP status must not bypass operation cleanup.
 - Existing safe uninstall target boundaries remain unchanged.
+- Reinstallation may overwrite an older desktop controller only when Windows product metadata identifies it as `DeepSeek Harness 控制台`; an unrelated same-name file still blocks installation.
 
 ## Automated tests
 
@@ -74,6 +76,8 @@ Tests must execute real production process-runner and state-model code. They mus
 4. Success, failure, exception, timeout, and cancellation state tests assert the resulting install, start, close, update, and uninstall availability.
 5. Installer behavior tests exercise both final status branches so the invalid `if` form cannot recur.
 6. Existing version-resolution, installer regression, PowerShell parsing, build, and single-file EXE checks remain required.
+7. A cancellation-then-stop concurrency test proves that the stop operation waits for the active operation gate and that the stopping state takes precedence until shutdown finishes.
+8. Installer target tests accept verified prior manager metadata and reject unrelated or malformed same-name desktop files.
 
 ## Release gates
 

@@ -29,9 +29,16 @@ internal sealed record OperationUiState(
         Status: "状态：正在关闭…",
         Hint: "正在取消当前操作并关闭 DeepSeek；请等待关闭命令完成。");
 
-    public static OperationUiState ForIdle(bool installed, int httpStatus)
+    public static OperationUiState ForActivity(string? action, bool allowStop, bool stopInProgress)
     {
-        if (!installed)
+        if (stopInProgress) return ForStopping();
+        if (action is null) throw new ArgumentNullException(nameof(action));
+        return ForRunning(action, allowStop);
+    }
+
+    public static OperationUiState ForIdle(InstallationCondition installation, int httpStatus)
+    {
+        if (installation == InstallationCondition.None)
         {
             return new OperationUiState(
                 Install: true,
@@ -43,6 +50,18 @@ internal sealed record OperationUiState(
                 Hint: "点击“安装 DeepSeek”开始安装；操作过程会写入下方日志和桌面报告。");
         }
 
+        if (installation == InstallationCondition.Incomplete)
+        {
+            return new OperationUiState(
+                Install: true,
+                Start: false,
+                Stop: false,
+                Update: false,
+                Uninstall: true,
+                Status: "状态：安装不完整",
+                Hint: "检测到残缺安装；请点击“安装 DeepSeek”修复，或点击“卸载 DeepSeek”清理。");
+        }
+
         var responding = httpStatus > 0;
         var status = httpStatus == 200
             ? "状态：运行中（127.0.0.1:3080）"
@@ -50,7 +69,7 @@ internal sealed record OperationUiState(
                 ? $"状态：异常（HTTP {httpStatus}）"
                 : "状态：未运行";
         return new OperationUiState(
-            Install: false,
+            Install: true,
             Start: !responding,
             Stop: responding,
             Update: true,

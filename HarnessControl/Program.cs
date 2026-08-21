@@ -169,11 +169,14 @@ internal sealed class MainForm : Form
             SetStoppingUi();
             try
             {
-                var stopExitCode = await ExecutePowerShellAsync(
-                    LauncherPath("Stop-DeepSeekHarness.ps1"), "-PassThru", "关闭", CancellationToken.None);
-                Append(stopExitCode == 0
-                    ? "关闭命令已完成。"
-                    : $"关闭失败，退出码：{stopExitCode}。请查看上方日志。");
+                await OperationStopCoordinator.RunAfterActiveOperationAsync(_operationGate, async () =>
+                {
+                    var stopExitCode = await ExecutePowerShellAsync(
+                        LauncherPath("Stop-DeepSeekHarness.ps1"), "-PassThru", "关闭", CancellationToken.None);
+                    Append(stopExitCode == 0
+                        ? "关闭命令已完成。"
+                        : $"关闭失败，退出码：{stopExitCode}。请查看上方日志。");
+                });
             }
             catch (Exception ex)
             {
@@ -315,34 +318,38 @@ internal sealed class MainForm : Form
             return;
         }
 
-        try
-        {
-            BeginOperation(action, allowStop);
-            Append($"========== {action} {HarnessName} ==========");
-            var exitCode = await operation();
-            if (_activeCancellation?.IsCancellationRequested == true)
-                Append($"{action}已取消。服务状态已重新检测。");
-            else if (exitCode == 0)
-                Append($"{action}完成。");
-            else
-                Append($"{action}失败，退出码：{exitCode}。请查看上方日志或桌面报告。");
-        }
-        catch (Exception ex)
-        {
-            Append($"{action}异常：{ex.Message}");
-        }
-        finally
-        {
-            try
+        await OperationExecutionCoordinator.RunWithFinalizerAsync(
+            async () =>
             {
-                EndOperation();
-            }
-            finally
+                try
+                {
+                    BeginOperation(action, allowStop);
+                    Append($"========== {action} {HarnessName} ==========");
+                    var exitCode = await operation();
+                    if (_activeCancellation?.IsCancellationRequested == true)
+                        Append($"{action}已取消。服务状态已重新检测。");
+                    else if (exitCode == 0)
+                        Append($"{action}完成。");
+                    else
+                        Append($"{action}失败，退出码：{exitCode}。请查看上方日志或桌面报告。");
+                }
+                catch (Exception ex)
+                {
+                    Append($"{action}异常：{ex.Message}");
+                }
+            },
+            async () =>
             {
-                try { await RefreshStatusSafelyAsync(); }
-                finally { _operationGate.Release(); }
-            }
-        }
+                try
+                {
+                    EndOperation();
+                }
+                finally
+                {
+                    try { await RefreshStatusSafelyAsync(); }
+                    finally { _operationGate.Release(); }
+                }
+            });
     }
 
     private static bool HasUtf8Bom(string path)
@@ -416,6 +423,7 @@ internal sealed class MainForm : Form
 
         ExtractResource("HarnessControl.Resources.Install.ps1", Path.Combine(SupportRoot, "Install-DeepSeekHarness.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Install.Completion.ps1", Path.Combine(SupportRoot, "Install.Completion.ps1"), textFile: true);
+        ExtractResource("HarnessControl.Resources.Install.Target.ps1", Path.Combine(SupportRoot, "Install.Target.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Launcher.Common.ps1", Path.Combine(launcher, "Launcher.Common.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Version.Common.ps1", Path.Combine(launcher, "Version.Common.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Start.ps1", Path.Combine(launcher, "Start-DeepSeekHarness.ps1"), textFile: true);
@@ -528,13 +536,18 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
 
     private async Task RefreshStatusAsync()
     {
+        if (_stopInProgress)
+        {
+            ApplyUiState(OperationUiState.ForStopping());
+            return;
+        }
         if (_activeAction is not null)
         {
-            ApplyUiState(OperationUiState.ForRunning(_activeAction, _activeAllowStop));
+            ApplyUiState(OperationUiState.ForActivity(_activeAction, _activeAllowStop, _stopInProgress));
             return;
         }
         var status = await GetHarnessHttpStatusAsync();
-        ApplyUiState(OperationUiState.ForIdle(Directory.Exists(HarnessRoot), status));
+        ApplyUiState(OperationUiState.ForIdle(GetInstallationCondition(), status));
     }
 
     private async Task RefreshStatusSafelyAsync()
@@ -545,7 +558,7 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
         }
         catch (Exception ex)
         {
-            ApplyUiState(OperationUiState.ForIdle(Directory.Exists(HarnessRoot), httpStatus: 0));
+            ApplyUiState(OperationUiState.ForIdle(GetInstallationCondition(), httpStatus: 0));
             Append($"刷新状态失败，已恢复操作按钮：{ex.Message}");
         }
     }
@@ -584,7 +597,7 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
             return;
         }
 
-        ApplyUiState(OperationUiState.ForIdle(Directory.Exists(HarnessRoot), httpStatus: 0));
+        ApplyUiState(OperationUiState.ForIdle(GetInstallationCondition(), httpStatus: 0));
     }
 
     private void SetStoppingUi()
@@ -602,6 +615,9 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
         _status.Text = state.Status;
         _hint.Text = state.Hint;
     }
+
+    private static InstallationCondition GetInstallationCondition() =>
+        InstallationConditionDetector.Detect(HarnessRoot, ProfileRoot, LocalPluginRoot);
 
     private static string ResolvePowerShell()
     {

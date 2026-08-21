@@ -21,6 +21,15 @@ Write-Output "Using .NET SDK: $dotnet"
 
 & (Join-Path $PSScriptRoot 'Verify-Installer.ps1')
 
+$realInstallScript = Join-Path $PSScriptRoot 'Verify-RealInstall.ps1'
+$tokens = $null
+$parseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile($realInstallScript, [ref]$tokens, [ref]$parseErrors) | Out-Null
+if ($parseErrors.Count -gt 0) {
+    throw "真实安装门禁脚本语法检查失败：$($parseErrors[0].Message)"
+}
+Write-Output 'Real install gate script parse passed (1 check).'
+
 $testProject = Join-Path $repoRoot 'HarnessControl.Tests\HarnessControl.Tests.csproj'
 & $dotnet build $testProject -c Release
 if ($LASTEXITCODE -ne 0) { throw "管理器行为测试构建失败：$LASTEXITCODE" }
