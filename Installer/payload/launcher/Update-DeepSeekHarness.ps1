@@ -19,6 +19,7 @@ $corepack = Join-Path $nodeRoot 'corepack.cmd'
 $snapshotRoot = $null
 $stopped = $false
 $started = $false
+. (Join-Path $PSScriptRoot 'Version.Common.ps1')
 
 function Write-UpdateLog { param([string]$Message) Write-Output ("[{0:HH:mm:ss}] [安全更新] {1}" -f (Get-Date), $Message) }
 function Read-Json {
@@ -134,30 +135,7 @@ foreach ($path in @($node, $corepack, $profileRoot, $webProfile)) {
 
 Write-UpdateLog '开始检查 DeepSeek Harness 更新。'
 $currentCore = Read-PackageVersion -ManifestPath (Join-Path $profileRoot 'package.json') -PackageName '@deepseek-ai/dsh'
-function Get-LatestPublishedVersion {
-    param([string]$PackageName)
-    $rawVersions = & $corepack pnpm --color never view $PackageName versions --json
-    if ($LASTEXITCODE -ne 0 -or $null -eq $rawVersions) { throw "无法读取 $PackageName 的已发布版本列表。" }
-    try { $publishedVersions = @((($rawVersions -join [Environment]::NewLine) | ConvertFrom-Json)) }
-    catch { throw "无法解析 $PackageName 的已发布版本列表：$($_.Exception.Message)" }
-    $parsedVersions = foreach ($version in $publishedVersions) {
-        $text = [string]$version
-        if ($text -match '^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:-(?<channel>rc)\.(?<pre>\d+))?$') {
-            [pscustomobject]@{
-                Text = $text
-                Major = [int]$Matches.major
-                Minor = [int]$Matches.minor
-                Patch = [int]$Matches.patch
-                Stable = if ([string]::IsNullOrEmpty($Matches.channel)) { 1 } else { 0 }
-                Pre = if ([string]::IsNullOrEmpty($Matches.pre)) { 0 } else { [int]$Matches.pre }
-            }
-        }
-    }
-    $latest = $parsedVersions | Sort-Object @{Expression = { $_.Major }; Descending = $true }, @{Expression = { $_.Minor }; Descending = $true }, @{Expression = { $_.Patch }; Descending = $true }, @{Expression = { $_.Stable }; Descending = $true }, @{Expression = { $_.Pre }; Descending = $true } | Select-Object -First 1
-    if ($null -eq $latest) { throw "无法从 $PackageName 的已发布版本中识别可用版本。" }
-    return $latest.Text
-}
-$latestCore = Get-LatestPublishedVersion -PackageName '@deepseek-ai/dsh'
+$latestCore = Get-LatestPublishedPackageVersion -CorepackPath $corepack -PackageName '@deepseek-ai/dsh'
 Write-UpdateLog "Harness：当前 $currentCore，最新 $latestCore。"
 
 $coreNeedsUpdate = $currentCore -ne $latestCore
