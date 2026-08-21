@@ -6,7 +6,7 @@ DeepSeek Harness 便携安装包
 3. 等待提示“安装完成”，然后从桌面打开“DeepSeek Harness 控制台.exe”。
 
 说明：
-- 本安装包为 Windows x64 准备，内含 Node 运行时、控制台及两个本地插件包。
-- 首次安装需要联网下载官方 Harness 与 Web UI 依赖；首次启动后访问地址为 http://127.0.0.1:3080/。
+- 本安装包为 Windows x64 准备，内含 Node 运行时、控制台及两个本地 SSS 插件包。
+- 首次安装需要联网下载官方 Harness 与官方 Web UI；首次启动后访问地址为 http://127.0.0.1:3080/。
 - 为保护已有内容，检测到目标电脑存在 DeepSeekHarness 或 .dsh\profiles 时会停止，不会覆盖。
 - 桌面仅创建“DeepSeek Harness 控制台.exe”；启动、关闭和更新均在控制台中完成。

@@ -113,7 +113,7 @@ try {
     Get-ChildItem -LiteralPath $launcherPayload -Force | Copy-Item -Destination $launcherRoot -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $payloadRoot 'plugins\sss-dsh-billing-0.1.5.tgz'), (Join-Path $payloadRoot 'plugins\sss-dsh-codex-reasoning-0.1.2.tgz') -Destination $localPluginRoot -Force
 
-    Write-InstallLog '下载并安装官方 Harness、Web UI 与两个本地插件。'
+    Write-InstallLog '下载并安装官方 Harness、官方 Web UI 与两个本地 SSS 插件。'
     $corepack = Join-Path $HarnessRoot 'node-runtime\node-v22.17.1-win-x64\corepack.cmd'
     $profileWorkspace = "packages:`n  - .`n`nnodeLinker: isolated`nautoInstallPeers: true`nallowBuilds:`n  '@deepseek-ai/dsh-subprocess-local': true`n  '@google/genai': true`n  koffi: true`n  node-pty: true`n  protobufjs: true"
     [System.IO.File]::WriteAllText((Join-Path $ProfileRoot 'pnpm-workspace.yaml'), $profileWorkspace, [System.Text.UTF8Encoding]::new($false))
@@ -124,30 +124,16 @@ try {
     $webManifest = @{
         name = 'dsh-profile-web'; private = $true
         dependencies = @{
-            '@linxin666/dsh-web-ui-all' = '0.1.20'
-            '@linxin666/dsh-client-ui-community-plugins' = '0.1.20'
-            '@linxin666/dsh-client-ui-aionui-panel' = '0.1.20'
-            '@linxin666/dsh-client-ui-task-board' = '0.1.20'
-            '@linxin666/dsh-client-ui-git-graph' = '0.1.20'
-            '@linxin666/dsh-pet' = '0.1.20'
-            '@linxin666/dsh-remote-web-ui' = '0.1.20'
-            '@linxin666/dsh-live-stats' = '0.1.20'
-            '@linxin666/dsh-ssh' = '0.1.20'
-            '@linxin666/dsh-tool-describe-image' = '0.1.20'
-            '@linxin666/dsh-liangshen' = '0.1.20'
-            '@linxin666/dsh-client-ui-web-ui-settings' = '0.1.20'
-            '@linxin666/dsh-skins' = '0.1.20'
-            '@linxin666/dsh-client-ui-skin-center' = '0.1.20'
             'sss-dsh-billing' = 'file:' + (Join-Path $localPluginRoot 'sss-dsh-billing-0.1.5.tgz').Replace('\', '/')
             'sss-dsh-codex-reasoning' = 'file:' + (Join-Path $localPluginRoot 'sss-dsh-codex-reasoning-0.1.2.tgz').Replace('\', '/')
         }
-        dsh = @{ profile = @{ bundles = @('@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'sss-dsh-billing', 'sss-dsh-codex-reasoning', '@linxin666/dsh-web-ui-all') } }
+        dsh = @{ profile = @{ bundles = @('@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'sss-dsh-billing', 'sss-dsh-codex-reasoning') } }
     }
     $webRoot = Join-Path $ProfileRoot 'web'
     New-Item -ItemType Directory -Path $webRoot -Force | Out-Null
     $webManifestJson = $webManifest | ConvertTo-Json -Depth 10
     [System.IO.File]::WriteAllText((Join-Path $webRoot 'package.json'), $webManifestJson, [System.Text.UTF8Encoding]::new($false))
-    $webWorkspace = "packages:`n  - .`n`nnodeLinker: isolated`nautoInstallPeers: true`nallowBuilds:`n  cloudflared: true`n  cpu-features: true`n  ssh2: true"
+    $webWorkspace = "packages:`n  - .`n`nnodeLinker: isolated`nautoInstallPeers: true`nallowBuilds:`n  node-pty: true"
     [System.IO.File]::WriteAllText((Join-Path $webRoot 'pnpm-workspace.yaml'), $webWorkspace, [System.Text.UTF8Encoding]::new($false))
     & $corepack pnpm --dir $webRoot install
     if ($LASTEXITCODE -ne 0) { throw "Web UI 与插件安装失败，退出码：$LASTEXITCODE" }
@@ -164,9 +150,8 @@ try {
         if ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 'http://127.0.0.1:3080/').StatusCode -ne 200) { throw '服务健康检查失败。' }
     }
     $coreVersion = (Get-Content -LiteralPath (Join-Path $ProfileRoot 'node_modules\@deepseek-ai\dsh\package.json') -Raw | ConvertFrom-Json).version
-    $webVersion = (Get-Content -LiteralPath (Join-Path $webRoot 'package.json') -Raw | ConvertFrom-Json).dependencies.'@linxin666/dsh-web-ui-all'
     Write-InstallLog "Harness 核心版本：$coreVersion。"
-    Write-InstallLog "Web UI 版本：$webVersion。"
+    Write-InstallLog '官方 Web UI：随 Harness 核心安装。'
     Write-InstallLog '已启用插件：sss-dsh-billing 0.1.5、sss-dsh-codex-reasoning 0.1.2。'
     Write-InstallLog (if ($NoLaunch) { '服务未启动（安装参数指定 NoLaunch）。' } else { '服务健康检查通过（HTTP 200）。' })
     Write-InstallLog '安装完成。桌面已创建“DeepSeek Harness 控制台.exe”。'

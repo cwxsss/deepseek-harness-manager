@@ -5,11 +5,11 @@ A Windows desktop manager for a local DeepSeek Harness installation. It provides
 ## Features
 
 - Start and stop the local Harness service on `127.0.0.1:3080`.
-- Check for and install Harness and Web UI updates.
+- Check for and install official Harness updates.
 - Create a timestamped profile snapshot before an update.
 - Validate the homepage and enabled top-level plugin scripts after an update.
 - Automatically restore the previous profile state when an update fails validation.
-- Refuse an update when the Web UI aggregate contains an undeclared client-plugin junction, preventing stale plugin links from breaking the UI.
+- Validate the enabled SSS plugin scripts after an update, preventing broken local plugin links from starting silently.
 
 ## Project layout
 
@@ -28,7 +28,7 @@ dotnet build .\HarnessControl\HarnessControl.csproj -c Release
 
 ## Safety model
 
-The updater treats a successful homepage response as necessary but insufficient. It also checks the client JavaScript for each plugin explicitly enabled by the active Web profile. It discovers the highest published release instead of relying only on the npm `latest` tag, so prereleases such as `rc.8` are not missed. It normalizes the `node-pty` build allowlist required by the Web profile. If an update cannot pass the checks, it restores the saved `package.json`, lock files, and workspace configuration, reinstalls the previous dependency graph, and starts the recovered service.
+The updater treats a successful homepage response as necessary but insufficient. It also checks the client JavaScript for each SSS plugin explicitly enabled by the active Web profile. It discovers the highest published Harness release instead of relying only on the npm `latest` tag, so prereleases such as `rc.1` are not missed. If an update cannot pass the checks, it restores the saved `package.json`, lock files, and workspace configuration, reinstalls the previous dependency graph, and starts the recovered service.
 
 The manager and installer require PowerShell 7 and no longer fall back to Windows PowerShell 5.1. This avoids UTF-8 script and JSON parsing failures on Windows.
 

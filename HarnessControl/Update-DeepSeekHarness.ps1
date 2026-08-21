@@ -112,25 +112,6 @@ function Get-WebClientPlugins {
         }
     }
     return @($clients | Sort-Object Name -Unique)
-}function Assert-NoUnexpectedAggregateClientLinks {
-    $aggregate = Resolve-PackagePath -PackageName '@linxin666/dsh-web-ui-all' -FromDirectory $webProfile
-    if ($null -eq $aggregate) { return }
-    $manifest = Read-Json (Join-Path $aggregate 'package.json')
-    $declared = @{}
-    foreach ($name in @($manifest.dependencies.PSObject.Properties.Name)) { $declared[[string]$name] = $true }
-    $scope = Join-Path $aggregate 'node_modules\@linxin666'
-    if (-not (Test-Path -LiteralPath $scope)) { return }
-    $unexpected = @()
-    Get-ChildItem -LiteralPath $scope -Directory | ForEach-Object {
-        $childManifest = Join-Path $_.FullName 'package.json'
-        if ((Test-Path -LiteralPath $childManifest) -and -not $declared.ContainsKey("@linxin666/$($_.Name)")) {
-            $child = Read-Json $childManifest
-            if ($null -ne $child.dsh -and $null -ne $child.dsh.client) { $unexpected += $_.Name }
-        }
-    }
-    if ($unexpected.Count -gt 0) {
-        throw ('检测到全家桶中未声明的客户端插件联接：' + ($unexpected -join ', ') + '。为避免旧插件干扰，本次更新未执行；请先移除或将其加入正式依赖。')
-    }
 }
 function Test-RunningWebPlugins {
     $root = Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 'http://127.0.0.1:3080/'
@@ -151,10 +132,8 @@ foreach ($path in @($node, $corepack, $profileRoot, $webProfile)) {
     if (-not (Test-Path -LiteralPath $path)) { throw "缺少更新所需文件：$path" }
 }
 
-Assert-NoUnexpectedAggregateClientLinks
-Write-UpdateLog '开始检查 DeepSeek Harness 与 Web UI 更新。'
+Write-UpdateLog '开始检查 DeepSeek Harness 更新。'
 $currentCore = Read-PackageVersion -ManifestPath (Join-Path $profileRoot 'package.json') -PackageName '@deepseek-ai/dsh'
-$currentWebUi = Read-PackageVersion -ManifestPath (Join-Path $webProfile 'package.json') -PackageName '@linxin666/dsh-web-ui-all'
 function Get-LatestPublishedVersion {
     param([string]$PackageName)
     $rawVersions = & $corepack pnpm --color never view $PackageName versions --json
@@ -179,13 +158,10 @@ function Get-LatestPublishedVersion {
     return $latest.Text
 }
 $latestCore = Get-LatestPublishedVersion -PackageName '@deepseek-ai/dsh'
-$latestWebUi = Get-LatestPublishedVersion -PackageName '@linxin666/dsh-web-ui-all'
 Write-UpdateLog "Harness：当前 $currentCore，最新 $latestCore。"
-Write-UpdateLog "Web UI：当前 $currentWebUi，最新 $latestWebUi。"
 
 $coreNeedsUpdate = $currentCore -ne $latestCore
-$webNeedsUpdate = $currentWebUi -ne $latestWebUi
-if (-not $coreNeedsUpdate -and -not $webNeedsUpdate) {
+if (-not $coreNeedsUpdate) {
     Test-RunningWebPlugins
     Write-UpdateLog '当前已是最新版本；服务与插件脚本验证通过，未重启。'
     if ($PassThru) { [pscustomobject]@{ HttpStatus = 200; Updated = $false; Latest = $true; Snapshot = $null } }
@@ -199,10 +175,8 @@ try {
     $stopped = $true
     Ensure-WebPluginBuildAllowlist
     if ($coreNeedsUpdate) { Invoke-NativeChecked -FilePath $corepack -Arguments @('pnpm', '--color', 'never', '--dir', $profileRoot, 'add', "@deepseek-ai/dsh@$latestCore") -Label "更新 Harness 核心至 $latestCore" }
-    if ($webNeedsUpdate) { Invoke-NativeChecked -FilePath $corepack -Arguments @('pnpm', '--color', 'never', '--dir', $webProfile, 'add', "@linxin666/dsh-web-ui-all@$latestWebUi") -Label "更新 Web UI 至 $latestWebUi" }
     $cli = Join-Path $profileRoot 'node_modules\@deepseek-ai\dsh\lib\bin.js'
     Invoke-NativeChecked -FilePath $node -Arguments @($cli, '--version') -Label '验证 Harness 核心版本'
-    Assert-NoUnexpectedAggregateClientLinks
     & (Join-Path $launcherRoot 'Start-DeepSeekHarness.ps1') -PassThru
     $started = $true
     Test-RunningWebPlugins

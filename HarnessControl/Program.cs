@@ -105,7 +105,7 @@ internal sealed class MainForm : Form
     private async Task InstallAsync()
     {
         var result = MessageBox.Show(
-            "将安装或继续安装 DeepSeek Harness，并下载官方核心与 Web UI 依赖。\n\n已存在的完整安装不会被覆盖。是否继续？",
+            "将安装或继续安装 DeepSeek Harness，并下载官方核心、官方 Web UI 与两个本地 SSS 插件。\n\n已存在的完整安装不会被覆盖。是否继续？",
             "确认安装", MessageBoxButtons.YesNo, MessageBoxIcon.Information, MessageBoxDefaultButton.Button2);
         if (result != DialogResult.Yes) return;
 
