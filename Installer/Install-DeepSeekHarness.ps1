@@ -81,30 +81,61 @@ Require-Payload (Join-Path $payloadRoot 'DeepSeek Harness 控制台.exe')
 Require-Payload (Join-Path $payloadRoot 'launcher')
 Require-Payload (Join-Path $payloadRoot 'plugins\sss-dsh-billing-0.1.5.tgz')
 Require-Payload (Join-Path $payloadRoot 'plugins\sss-dsh-codex-reasoning-0.1.2.tgz')
-$nodeExecutable = Join-Path $HarnessRoot 'node-runtime\node-v22.17.1-win-x64\node.exe'
+$nodeVersion = 'node-v22.17.1-win-x64'
+$nodeRuntimeRoot = Join-Path $HarnessRoot 'node-runtime'
+$nodeRoot = Join-Path $nodeRuntimeRoot $nodeVersion
+$nodeExecutable = Join-Path $nodeRoot 'node.exe'
+$legacyNodeRoot = Join-Path $HarnessRoot $nodeVersion
+$legacyNodeExecutable = Join-Path $legacyNodeRoot 'node.exe'
+$hasLegacyNodeRuntime = (Test-Path -LiteralPath $legacyNodeExecutable -PathType Leaf) -and -not (Test-Path -LiteralPath $nodeExecutable -PathType Leaf)
+if ($hasLegacyNodeRuntime) {
+    Write-InstallLog '发现上次安装留下的 Node 运行环境，正在迁移到标准目录。'
+    New-Item -ItemType Directory -Path $nodeRuntimeRoot -Force | Out-Null
+    Move-Item -LiteralPath $legacyNodeRoot -Destination $nodeRuntimeRoot -Force
+}
 $existingWebManifest = Join-Path $ProfileRoot 'web\package.json'
 $canResume = (Test-Path -LiteralPath $nodeExecutable) -and (Test-Path -LiteralPath (Join-Path $ProfileRoot 'package.json')) -and (-not (Test-Path -LiteralPath $existingWebManifest))
+$hasPartialInstall = (Test-Path -LiteralPath $HarnessRoot) -and (Test-Path -LiteralPath $ProfileRoot) -and
+    (-not (Test-Path -LiteralPath (Join-Path $ProfileRoot 'package.json'))) -and
+    (-not (Test-Path -LiteralPath $existingWebManifest))
 if ((Test-Path -LiteralPath $HarnessRoot) -or (Test-Path -LiteralPath $ProfileRoot)) {
-    if (-not $canResume) { throw "检测到已有 Harness 安装或配置。为保护现有内容，安装器不会覆盖它。" }
+    if (-not ($canResume -or $hasPartialInstall)) { throw "检测到已有 Harness 安装或配置。为保护现有内容，安装器不会覆盖它。" }
 }
-if ((Test-Path -LiteralPath $desktopController) -and (-not $canResume)) { throw "桌面已存在同名控制台：$desktopController。请先改名或移动该文件后重试。" }
+if ((Test-Path -LiteralPath $desktopController) -and (-not ($canResume -or $hasPartialInstall))) { throw "桌面已存在同名控制台：$desktopController。请先改名或移动该文件后重试。" }
 
 try {
     if ($canResume) { Write-InstallLog '检测到上次核心安装未完成，正在从断点继续。' } else { Write-InstallLog '解压 Node 运行环境。' }
     New-Item -ItemType Directory -Path $HarnessRoot, $ProfileRoot, $localPluginRoot, $DesktopPath -Force | Out-Null
     if (-not (Test-Path -LiteralPath $nodeExecutable)) {
         $nodeArchive = Join-Path $payloadRoot 'node-runtime.tar'
+        New-Item -ItemType Directory -Path $nodeRuntimeRoot -Force | Out-Null
         if (Test-Path -LiteralPath $nodeArchive -PathType Leaf) {
-            & tar.exe -xf $nodeArchive -C $HarnessRoot
+            & tar.exe -xf $nodeArchive -C $nodeRuntimeRoot
             if ($LASTEXITCODE -ne 0) { throw "Node 运行环境解压失败，退出码：$LASTEXITCODE" }
         }
         else {
             $nodeZip = Join-Path $packageRoot 'node-v22.17.1-win-x64.zip'
             Write-InstallLog '正在从 Node.js 官方下载运行环境（约 36 MB）。'
-            Invoke-WebRequest -UseBasicParsing -Uri 'https://nodejs.org/download/release/v22.17.1/node-v22.17.1-win-x64.zip' -OutFile $nodeZip
-            Expand-Archive -LiteralPath $nodeZip -DestinationPath $HarnessRoot -Force
+            Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri 'https://nodejs.org/download/release/v22.17.1/node-v22.17.1-win-x64.zip' -OutFile $nodeZip
+            $extractRoot = Join-Path $HarnessRoot '.node-runtime-extract'
+            if (Test-Path -LiteralPath $extractRoot) { Remove-Item -LiteralPath $extractRoot -Recurse -Force }
+            New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
+            try {
+                Expand-Archive -LiteralPath $nodeZip -DestinationPath $extractRoot -Force
+                $extractedNodeRoot = Join-Path $extractRoot $nodeVersion
+                if (-not (Test-Path -LiteralPath (Join-Path $extractedNodeRoot 'node.exe') -PathType Leaf)) {
+                    throw "压缩包内缺少 $nodeVersion\node.exe。"
+                }
+                Move-Item -LiteralPath $extractedNodeRoot -Destination $nodeRuntimeRoot -Force
+            }
+            catch {
+                throw "Node 运行环境下载或解压失败：$($_.Exception.Message)。下载文件保留于：$nodeZip"
+            }
+            finally {
+                if (Test-Path -LiteralPath $extractRoot) { Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue }
+            }
             Remove-Item -LiteralPath $nodeZip -Force -ErrorAction SilentlyContinue
-            if (-not (Test-Path -LiteralPath $nodeExecutable -PathType Leaf)) { throw 'Node 运行环境下载或解压失败。' }
+            if (-not (Test-Path -LiteralPath $nodeExecutable -PathType Leaf)) { throw "Node 运行环境未就绪：$nodeExecutable" }
         }
     }
     $launcherPayload = Join-Path $payloadRoot 'launcher'

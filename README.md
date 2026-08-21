@@ -18,12 +18,19 @@ A Windows desktop manager for a local DeepSeek Harness installation. It provides
 
 The repository deliberately excludes generated binaries, Node.js runtimes, dependency folders, local profiles, logs, and personal configuration.
 
+## Distribution
+
+The end-user distribution is a single self-contained Windows x64 executable: `DeepSeek Harness 控制台.exe`. The installer script, launcher scripts, and the two SSS plugin packages are embedded in this executable, so users do not need to receive the `payload` folder, `.cmd` files, `.ps1` files, or `.tgz` files separately. Run the executable and choose **安装 DeepSeek**; the same window then provides installation, start, stop, update, and uninstall operations.
+
+The ZIP/portable folder is optional and intended for development, backup, or batch distribution. It is not required for normal end-user installation. The executable still requires PowerShell 7 and an internet connection for the initial official Harness download (and for Node.js when the target machine does not already have it).
+
 ## Build
 
 Requirements: Windows, PowerShell 7 (`pwsh.exe`), and the .NET 10 SDK.
 
 ```powershell
 dotnet build .\HarnessControl\HarnessControl.csproj -c Release
+pwsh -NoProfile -File .\tests\Verify-Installer.ps1
 ```
 
 ## Safety model
@@ -36,4 +43,4 @@ New installations use the official Harness baseline `0.1.1-rc.1`. The updater st
 
 ## Notes
 
-This is a local-management project, not the official DeepSeek Harness distribution. The portable installer source expects release payloads (the built control executable and Node.js runtime archive) to be assembled separately; those large generated artifacts are intentionally not versioned here.
+This is a local-management project, not the official DeepSeek Harness distribution. Release payloads are generated from the project and are intentionally not versioned in Git.
