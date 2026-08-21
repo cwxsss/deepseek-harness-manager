@@ -25,6 +25,11 @@ if (group is "all" or "timeout")
     await TestTimeoutAsync();
     passed++;
 }
+if (group is "all" or "ui-state")
+{
+    TestOperationUiStates();
+    passed += 5;
+}
 if (passed == 0) throw new InvalidOperationException($"Unknown test group: {group}");
 Console.WriteLine($"Process runner tests passed ({passed} checks).");
 
@@ -117,6 +122,32 @@ static async Task TestTimeoutAsync()
 
     Assert(result.Reason == ProcessCompletionReason.TimedOut, $"必须区分操作超时，实际为 {result.Reason}");
     Assert(stopwatch.Elapsed < TimeSpan.FromSeconds(3), $"超时必须在三秒内结束，实际 {stopwatch.Elapsed}");
+}
+
+static void TestOperationUiStates()
+{
+    var running = OperationUiState.ForRunning("安装", allowStop: true);
+    Assert(!running.Install && !running.Start && running.Stop && !running.Update && !running.Uninstall,
+        "安装进行中只能使用关闭按钮");
+
+    var stopping = OperationUiState.ForStopping();
+    Assert(!stopping.Install && !stopping.Start && !stopping.Stop && !stopping.Update && !stopping.Uninstall,
+        "正在关闭时所有按钮必须暂时禁用");
+
+    var installedAndRunning = OperationUiState.ForIdle(installed: true, httpStatus: 200);
+    Assert(!installedAndRunning.Install && !installedAndRunning.Start && installedAndRunning.Stop &&
+           installedAndRunning.Update && installedAndRunning.Uninstall,
+        "安装完成并运行后必须启用关闭、更新和卸载");
+    Assert(!installedAndRunning.Status.Contains("正在", StringComparison.Ordinal), "安装完成后状态不得残留正在操作文案");
+
+    var installedAndStopped = OperationUiState.ForIdle(installed: true, httpStatus: 0);
+    Assert(!installedAndStopped.Install && installedAndStopped.Start && !installedAndStopped.Stop &&
+           installedAndStopped.Update && installedAndStopped.Uninstall,
+        "已安装但未运行时必须启用启动、更新和卸载");
+
+    var notInstalled = OperationUiState.ForIdle(installed: false, httpStatus: 0);
+    Assert(notInstalled.Install && !notInstalled.Start && !notInstalled.Stop && !notInstalled.Update && !notInstalled.Uninstall,
+        "未安装时只能使用安装按钮");
 }
 
 static string ResolvePowerShell()

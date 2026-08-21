@@ -38,6 +38,7 @@ internal sealed class MainForm : Form
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private CancellationTokenSource? _activeCancellation;
     private string? _activeAction;
+    private bool _activeAllowStop;
     private bool _stopInProgress;
 
     private static string HarnessRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeepSeekHarness");
@@ -183,8 +184,7 @@ internal sealed class MainForm : Form
                 _stopInProgress = false;
                 if (_activeAction is null)
                 {
-                    EnableIdleUi();
-                    await RefreshStatusAsync();
+                    await RefreshStatusSafelyAsync();
                 }
             }
             return;
@@ -204,7 +204,7 @@ internal sealed class MainForm : Form
             }
             finally
             {
-                try { await RefreshStatusAsync(); }
+                try { await RefreshStatusSafelyAsync(); }
                 finally { _operationGate.Release(); }
             }
         }
@@ -339,7 +339,7 @@ internal sealed class MainForm : Form
             }
             finally
             {
-                try { await RefreshStatusAsync(); }
+                try { await RefreshStatusSafelyAsync(); }
                 finally { _operationGate.Release(); }
             }
         }
@@ -530,15 +530,24 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
     {
         if (_activeAction is not null)
         {
-            _status.Text = $"状态：正在{_activeAction}…";
+            ApplyUiState(OperationUiState.ForRunning(_activeAction, _activeAllowStop));
             return;
         }
         var status = await GetHarnessHttpStatusAsync();
-        _status.Text = status == 200
-            ? "状态：运行中（127.0.0.1:3080）"
-            : status > 0
-                ? $"状态：异常（HTTP {status}）"
-                : Directory.Exists(HarnessRoot) ? "状态：未运行" : "状态：未安装";
+        ApplyUiState(OperationUiState.ForIdle(Directory.Exists(HarnessRoot), status));
+    }
+
+    private async Task RefreshStatusSafelyAsync()
+    {
+        try
+        {
+            await RefreshStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            ApplyUiState(OperationUiState.ForIdle(Directory.Exists(HarnessRoot), httpStatus: 0));
+            Append($"刷新状态失败，已恢复操作按钮：{ex.Message}");
+        }
     }
 
     private static async Task<int> GetHarnessHttpStatusAsync()
@@ -558,52 +567,40 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
     private void BeginOperation(string action, bool allowStop)
     {
         _activeAction = action;
+        _activeAllowStop = allowStop;
         _activeCancellation = new CancellationTokenSource();
-        _status.Text = $"状态：正在{action}…";
-        _install.Enabled = false;
-        _start.Enabled = false;
-        _update.Enabled = false;
-        _uninstall.Enabled = false;
-        _stop.Enabled = allowStop;
-        _hint.Text = allowStop
-            ? $"正在{action}；如需中止，请点击“关闭 DeepSeek”。"
-            : $"正在{action}；请等待当前操作完成。";
+        ApplyUiState(OperationUiState.ForRunning(action, allowStop));
     }
 
     private void EndOperation()
     {
         _activeAction = null;
+        _activeAllowStop = false;
         _activeCancellation?.Dispose();
         _activeCancellation = null;
         if (_stopInProgress)
         {
-            _status.Text = "状态：正在关闭…";
-            _hint.Text = "正在关闭 DeepSeek；请等待关闭命令完成。";
+            ApplyUiState(OperationUiState.ForStopping());
             return;
         }
 
-        EnableIdleUi();
+        ApplyUiState(OperationUiState.ForIdle(Directory.Exists(HarnessRoot), httpStatus: 0));
     }
 
     private void SetStoppingUi()
     {
-        _status.Text = "状态：正在关闭…";
-        _install.Enabled = false;
-        _start.Enabled = false;
-        _stop.Enabled = false;
-        _update.Enabled = false;
-        _uninstall.Enabled = false;
-        _hint.Text = "正在取消当前操作并关闭 DeepSeek；请等待关闭命令完成。";
+        ApplyUiState(OperationUiState.ForStopping());
     }
 
-    private void EnableIdleUi()
+    private void ApplyUiState(OperationUiState state)
     {
-        _install.Enabled = true;
-        _start.Enabled = true;
-        _stop.Enabled = true;
-        _update.Enabled = true;
-        _uninstall.Enabled = true;
-        _hint.Text = "安装和卸载会显示确认；操作过程均写入下方日志和桌面报告。";
+        _install.Enabled = state.Install;
+        _start.Enabled = state.Start;
+        _stop.Enabled = state.Stop;
+        _update.Enabled = state.Update;
+        _uninstall.Enabled = state.Uninstall;
+        _status.Text = state.Status;
+        _hint.Text = state.Hint;
     }
 
     private static string ResolvePowerShell()
