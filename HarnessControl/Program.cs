@@ -40,6 +40,7 @@ internal sealed class MainForm : Form
     private CancellationTokenSource? _activeCancellation;
     private Process? _activeProcess;
     private string? _activeAction;
+    private bool _stopInProgress;
 
     private static string HarnessRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeepSeekHarness");
     private static string ProfileRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "profiles");
@@ -147,10 +148,48 @@ internal sealed class MainForm : Form
 
     private async Task StopAsync()
     {
+        if (_stopInProgress)
+        {
+            Append("关闭操作已经在执行，请等待其完成。");
+            return;
+        }
+
         if (_activeCancellation is not null)
         {
+            _stopInProgress = true;
             Append($"正在取消“{_activeAction}”操作，随后关闭 DeepSeek…");
-            _activeCancellation.Cancel();
+            try
+            {
+                _activeCancellation.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The active operation may have finished between the check and cancellation.
+            }
+
+            SetStoppingUi();
+            try
+            {
+                var stopExitCode = await ExecutePowerShellAsync(
+                    LauncherPath("Stop-DeepSeekHarness.ps1"), "-PassThru", "关闭", CancellationToken.None);
+                Append(stopExitCode == 0
+                    ? "关闭命令已完成。"
+                    : $"关闭失败，退出码：{stopExitCode}。请查看上方日志。");
+            }
+            catch (Exception ex)
+            {
+                Append($"关闭异常：{ex.Message}");
+            }
+            finally
+            {
+                _stopInProgress = false;
+                if (_activeAction is null)
+                {
+                    EnableIdleUi();
+                    await RefreshStatusAsync();
+                }
+            }
+            return;
         }
 
         await _operationGate.WaitAsync();
@@ -161,9 +200,15 @@ internal sealed class MainForm : Form
         }
         finally
         {
-            EndOperation();
-            await RefreshStatusAsync();
-            _operationGate.Release();
+            try
+            {
+                EndOperation();
+            }
+            finally
+            {
+                try { await RefreshStatusAsync(); }
+                finally { _operationGate.Release(); }
+            }
         }
     }
 
@@ -290,9 +335,15 @@ internal sealed class MainForm : Form
         }
         finally
         {
-            EndOperation();
-            await RefreshStatusAsync();
-            _operationGate.Release();
+            try
+            {
+                EndOperation();
+            }
+            finally
+            {
+                try { await RefreshStatusAsync(); }
+                finally { _operationGate.Release(); }
+            }
         }
     }
 
@@ -311,7 +362,11 @@ internal sealed class MainForm : Form
         }
     }
 
-    private async Task<int> ExecutePowerShellAsync(string scriptPath, string arguments, string action)
+    private async Task<int> ExecutePowerShellAsync(
+        string scriptPath,
+        string arguments,
+        string action,
+        CancellationToken? cancellationToken = null)
     {
         if (!File.Exists(scriptPath))
         {
@@ -337,7 +392,10 @@ internal sealed class MainForm : Form
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        var cancellationRegistration = _activeCancellation?.Token.Register(() => TryStopProcess(process));
+        var token = cancellationToken ?? _activeCancellation?.Token ?? CancellationToken.None;
+        CancellationTokenRegistration? cancellationRegistration = token.CanBeCanceled
+            ? token.Register(() => TryStopProcess(process))
+            : null;
         try
         {
             var startedAt = DateTimeOffset.Now;
@@ -511,6 +569,29 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
         _activeCancellation?.Dispose();
         _activeCancellation = null;
         _activeProcess = null;
+        if (_stopInProgress)
+        {
+            _status.Text = "状态：正在关闭…";
+            _hint.Text = "正在关闭 DeepSeek；请等待关闭命令完成。";
+            return;
+        }
+
+        EnableIdleUi();
+    }
+
+    private void SetStoppingUi()
+    {
+        _status.Text = "状态：正在关闭…";
+        _install.Enabled = false;
+        _start.Enabled = false;
+        _stop.Enabled = false;
+        _update.Enabled = false;
+        _uninstall.Enabled = false;
+        _hint.Text = "正在取消当前操作并关闭 DeepSeek；请等待关闭命令完成。";
+    }
+
+    private void EnableIdleUi()
+    {
         _install.Enabled = true;
         _start.Enabled = true;
         _stop.Enabled = true;
