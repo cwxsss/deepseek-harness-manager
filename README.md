@@ -29,9 +29,21 @@ The ZIP/portable folder is optional and intended for development, backup, or bat
 Requirements: Windows, PowerShell 7 (`pwsh.exe`), and the .NET 10 SDK.
 
 ```powershell
-dotnet build .\HarnessControl\HarnessControl.csproj -c Release
-pwsh -NoProfile -File .\tests\Verify-Installer.ps1
+pwsh -NoProfile -File .\tests\Run-All.ps1
 ```
+
+`Run-All.ps1` executes the PowerShell installer checks, real process-lifecycle tests, button-state tests, Release build, and single-file publish verification. The generated verification directory must contain exactly one Windows EXE. A failed check blocks delivery even when the Harness homepage already returns HTTP 200.
+
+Pull requests and pushes to `main` run the same gate on a GitHub-hosted Windows runner. The workflow uses the current official `actions/checkout@v7` and `actions/setup-dotnet@v6` major releases. A release must not be merged or distributed until the `Windows tests` job passes and the separate real-install verification described below succeeds on the release machine.
+
+Before delivering a candidate EXE, run the guarded real GUI installation check. This step stops and replaces the current local DSH installation, so the explicit confirmation switch is required:
+
+```powershell
+$managerExe = (Resolve-Path -LiteralPath '.\HarnessControl\bin\Release\verified-publish\DeepSeek Harness 控制台.exe').Path
+pwsh -NoProfile -File .\tests\Verify-RealInstall.ps1 -ManagerExe $managerExe -ConfirmRealInstall
+```
+
+The real-install check is intentionally not run on a shared GitHub runner. It must verify HTTP 200, a non-busy final status, and enabled Close and Update buttons before the candidate EXE is copied to the download directory.
 
 ## Safety model
 
