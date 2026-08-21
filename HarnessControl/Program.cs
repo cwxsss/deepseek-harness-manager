@@ -402,6 +402,12 @@ internal sealed class MainForm : Form
             while (!process.HasExited)
             {
                 await Task.Delay(500);
+                if (action == "启动" && await GetHarnessHttpStatusAsync() == 200)
+                {
+                    Append("服务健康检查通过（HTTP 200），启动操作已完成。管理器已恢复其他操作按钮。");
+                    TryStopProcessOnly(process);
+                    return 0;
+                }
                 await RefreshStatusAsync();
                 if ((DateTimeOffset.Now - startedAt).TotalMinutes >= 15)
                 {
@@ -534,17 +540,25 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
             _status.Text = $"状态：正在{_activeAction}…";
             return;
         }
+        var status = await GetHarnessHttpStatusAsync();
+        _status.Text = status == 200
+            ? "状态：运行中（127.0.0.1:3080）"
+            : status > 0
+                ? $"状态：异常（HTTP {status}）"
+                : Directory.Exists(HarnessRoot) ? "状态：未运行" : "状态：未安装";
+    }
+
+    private static async Task<int> GetHarnessHttpStatusAsync()
+    {
         try
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
             using var response = await client.GetAsync(HarnessUrl);
-            _status.Text = response.StatusCode == HttpStatusCode.OK
-                ? "状态：运行中（127.0.0.1:3080）"
-                : $"状态：异常（HTTP {(int)response.StatusCode}）";
+            return (int)response.StatusCode;
         }
         catch
         {
-            _status.Text = Directory.Exists(HarnessRoot) ? "状态：未运行" : "状态：未安装";
+            return 0;
         }
     }
 
@@ -603,6 +617,12 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
     private static void TryStopProcess(Process process)
     {
         try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+        catch { }
+    }
+
+    private static void TryStopProcessOnly(Process process)
+    {
+        try { if (!process.HasExited) process.Kill(entireProcessTree: false); }
         catch { }
     }
 
