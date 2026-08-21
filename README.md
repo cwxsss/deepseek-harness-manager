@@ -39,7 +39,7 @@ The updater treats a successful homepage response as necessary but insufficient.
 
 The manager and installer require PowerShell 7 and no longer fall back to Windows PowerShell 5.1. This avoids UTF-8 script and JSON parsing failures on Windows.
 
-New installations use the official Harness baseline `0.1.1-rc.1`. The updater still discovers the highest published Harness and Web UI release, including RC versions, at update time.
+New installations and updates query the complete published `@deepseek-ai/dsh` version list and select the highest supported stable or `rc.N` version instead of relying on the npm `latest` tag. The selected DSH package supplies the official Web UI. If the version list cannot be queried or parsed, the operation stops with an explicit error rather than silently falling back to an older pinned release.
 
 ## Notes
 
