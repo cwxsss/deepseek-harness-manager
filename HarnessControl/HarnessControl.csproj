@@ -15,6 +15,7 @@
   <ItemGroup>
     <EmbeddedResource Include="..\Installer\Install-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Install.ps1" />
     <EmbeddedResource Include="..\Installer\payload\launcher\Launcher.Common.ps1" LogicalName="HarnessControl.Resources.Launcher.Common.ps1" />
+    <EmbeddedResource Include="..\Installer\payload\launcher\Version.Common.ps1" LogicalName="HarnessControl.Resources.Version.Common.ps1" />
     <EmbeddedResource Include="..\Installer\payload\launcher\Start-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Start.ps1" />
     <EmbeddedResource Include="..\Installer\payload\launcher\Stop-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Stop.ps1" />
     <EmbeddedResource Include="..\Installer\payload\launcher\Update-DeepSeekHarness.ps1" LogicalName="HarnessControl.Resources.Update.ps1" />

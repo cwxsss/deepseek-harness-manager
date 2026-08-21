@@ -449,6 +449,7 @@ internal sealed class MainForm : Form
 
         ExtractResource("HarnessControl.Resources.Install.ps1", Path.Combine(SupportRoot, "Install-DeepSeekHarness.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Launcher.Common.ps1", Path.Combine(launcher, "Launcher.Common.ps1"), textFile: true);
+        ExtractResource("HarnessControl.Resources.Version.Common.ps1", Path.Combine(launcher, "Version.Common.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Start.ps1", Path.Combine(launcher, "Start-DeepSeekHarness.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Stop.ps1", Path.Combine(launcher, "Stop-DeepSeekHarness.ps1"), textFile: true);
         ExtractResource("HarnessControl.Resources.Update.ps1", Path.Combine(launcher, "Update-DeepSeekHarness.ps1"), textFile: true);

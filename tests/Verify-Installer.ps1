@@ -1,6 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+& (Join-Path $PSScriptRoot 'Version.Common.Tests.ps1')
+
 $installerPath = Join-Path $repoRoot 'Installer\Install-DeepSeekHarness.ps1'
 $tokens = $null
 $errors = $null
@@ -32,6 +34,22 @@ if ($failed.Count -gt 0) {
     throw "安装器回归检查失败：$($failed.Name -join '、')"
 }
 
+$payloadUpdater = Get-Content -LiteralPath (Join-Path $repoRoot 'Installer\payload\launcher\Update-DeepSeekHarness.ps1') -Raw
+$sourceUpdater = Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\Update-DeepSeekHarness.ps1') -Raw
+$project = Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\HarnessControl.csproj') -Raw
+$program = Get-Content -LiteralPath (Join-Path $repoRoot 'HarnessControl\Program.cs') -Raw
+$wiringChecks = [ordered]@{
+    'Installer resolves latest published DSH' = $installer -match 'Get-LatestPublishedPackageVersion' -and $installer -notmatch '@deepseek-ai/dsh@0\.1\.1-rc\.1'
+    'Runtime updater uses shared resolver' = $payloadUpdater -match 'Version\.Common\.ps1' -and $payloadUpdater -match 'Get-LatestPublishedPackageVersion'
+    'Source updater uses shared resolver' = $sourceUpdater -match 'Version\.Common\.ps1' -and $sourceUpdater -match 'Get-LatestPublishedPackageVersion'
+    'Project embeds version resolver' = $project -match 'HarnessControl\.Resources\.Version\.Common\.ps1'
+    'Manager extracts version resolver' = $program -match 'HarnessControl\.Resources\.Version\.Common\.ps1'
+}
+$wiringFailures = @($wiringChecks.GetEnumerator() | Where-Object { -not $_.Value })
+if ($wiringFailures.Count -gt 0) {
+    throw "最新版安装接线检查失败：$($wiringFailures.Name -join '、')"
+}
+
 $fixture = Join-Path $PSScriptRoot 'fixtures\LongRunningLauncher.ps1'
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('dsh-launcher-test-' + [guid]::NewGuid().ToString('N'))
 $pidFile = Join-Path $testRoot 'service.pid'
@@ -50,4 +68,4 @@ finally {
     if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
-Write-Output "Installer regression checks passed ($($checks.Count + 2) checks)."
+Write-Output "Installer regression checks passed ($($checks.Count + $wiringChecks.Count + 2) checks)."
