@@ -45,11 +45,15 @@ pwsh -NoProfile -File .\tests\Verify-RealInstall.ps1 -ManagerExe $managerExe -Co
 
 The real-install check is intentionally not run on a shared GitHub runner. It must verify HTTP 200, a non-busy final status, and enabled Close and Update buttons before the candidate EXE is copied to the download directory.
 
+Run the same check a second time with the installed desktop `DeepSeek Harness 控制台.exe` as `-ManagerExe`. This covers in-place reinstallation: the installer must preserve the manager EXE that is currently running, finish the DSH replacement, and restore the Close and Update buttons. If a cancelled or timed-out PowerShell process cannot be terminated, the manager keeps every operation except Close disabled until that exact process tree is confirmed stopped.
+
 ## Safety model
 
 The updater treats a successful homepage response as necessary but insufficient. It also checks the client JavaScript for each SSS plugin explicitly enabled by the active Web profile. It discovers the highest published Harness release instead of relying only on the npm `latest` tag, so prereleases such as `rc.1` are not missed. If an update cannot pass the checks, it restores the saved `package.json`, lock files, and workspace configuration, reinstalls the previous dependency graph, and starts the recovered service.
 
 The manager and installer require PowerShell 7 and no longer fall back to Windows PowerShell 5.1. This avoids UTF-8 script and JSON parsing failures on Windows.
+
+An existing desktop controller is overwritten only after its product metadata identifies it as this manager. Redirecting symbolic-link targets are rejected; non-redirecting file-provider metadata may remain on redirected or synchronized desktop folders.
 
 New installations and updates query the complete published `@deepseek-ai/dsh` version list and select the highest supported stable or `rc.N` version instead of relying on the npm `latest` tag. The selected DSH package supplies the official Web UI. If the version list cannot be queried or parsed, the operation stops with an explicit error rather than silently falling back to an older pinned release.
 

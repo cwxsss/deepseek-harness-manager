@@ -3,7 +3,8 @@ param(
     [switch]$Repair,
     [string]$HarnessRoot = (Join-Path $env:LOCALAPPDATA 'DeepSeekHarness'),
     [string]$ProfileRoot = (Join-Path $env:USERPROFILE '.dsh\profiles'),
-    [string]$DesktopPath = ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory))
+    [string]$DesktopPath = ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)),
+    [string]$ManagerExecutablePath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,7 +105,6 @@ if ((Test-Path -LiteralPath $HarnessRoot) -or (Test-Path -LiteralPath $ProfileRo
     if (-not ($canResume -or $hasPartialInstall)) { throw "检测到已有 Harness 安装或配置。为保护现有内容，安装器不会覆盖它。" }
 }
 if ((Test-Path -LiteralPath $desktopController) -and
-    (-not ($canResume -or $hasPartialInstall)) -and
     (-not (Test-ManagedDesktopController -Path $desktopController))) {
     throw "桌面已存在非 DeepSeek Harness 管理器的同名文件：$desktopController。请先改名或移动该文件后重试。"
 }
@@ -182,7 +182,13 @@ try {
     $commonPath = Join-Path $HarnessRoot 'deepseek-harness-launcher\Launcher.Common.ps1'
     $commonContent = (Get-Content -LiteralPath $commonPath -Raw).Replace('C:\Users\chuai\AppData\Local\DeepSeekHarness', $HarnessRoot)
     [System.IO.File]::WriteAllText($commonPath, $commonContent, [System.Text.UTF8Encoding]::new($true))
-    Copy-Item -LiteralPath (Join-Path $payloadRoot 'DeepSeek Harness 控制台.exe') -Destination $desktopController -Force
+    if (-not [string]::IsNullOrWhiteSpace($ManagerExecutablePath) -and
+        (Test-SameFilePath -First $ManagerExecutablePath -Second $desktopController)) {
+        Write-InstallLog '当前管理器正在从桌面运行，保留正在使用的控制台 EXE。'
+    }
+    else {
+        Copy-Item -LiteralPath (Join-Path $payloadRoot 'DeepSeek Harness 控制台.exe') -Destination $desktopController -Force
+    }
     if (-not $NoLaunch) {
         Write-InstallLog '首次启动并验证本机服务（首次加载插件最长可能需要 120 秒）。'
         & (Join-Path $launcherRoot 'Start-DeepSeekHarness.ps1') -PassThru 2>&1 | ForEach-Object { Write-InstallLog ("启动日志：" + $_.ToString()) }

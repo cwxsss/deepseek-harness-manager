@@ -29,6 +29,15 @@ internal sealed record OperationUiState(
         Status: "状态：正在关闭…",
         Hint: "正在取消当前操作并关闭 DeepSeek；请等待关闭命令完成。");
 
+    public static OperationUiState ForTerminationFailure(string action) => new(
+        Install: false,
+        Start: false,
+        Stop: true,
+        Update: false,
+        Uninstall: false,
+        Status: $"状态：无法中止{action}",
+        Hint: "操作进程仍在运行。请再次点击“关闭 DeepSeek”强制结束该进程并恢复管理器。");
+
     public static OperationUiState ForActivity(string? action, bool allowStop, bool stopInProgress)
     {
         if (stopInProgress) return ForStopping();

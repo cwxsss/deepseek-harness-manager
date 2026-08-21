@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Reflection;
 using HarnessControl;
 
 var group = args.Length == 0 ? "all" : args[0];
@@ -18,6 +19,8 @@ if (group is "all" or "exit-code")
 if (group is "all" or "cancellation")
 {
     await TestCancellationAsync();
+    await TestPreciseTerminationByIdAsync();
+    passed++;
     passed++;
 }
 if (group is "all" or "timeout")
@@ -28,10 +31,11 @@ if (group is "all" or "timeout")
 if (group is "all" or "ui-state")
 {
     TestOperationUiStates();
+    TestManagerExecutableArgumentQuoting();
     TestInstallationConditionDetection();
     await TestStopWaitsForActiveOperationAsync();
     await TestFinalizationForEveryOutcomeAsync();
-    passed += 16;
+    passed += 19;
 }
 if (passed == 0) throw new InvalidOperationException($"Unknown test group: {group}");
 Console.WriteLine($"Process runner tests passed ({passed} checks).");
@@ -110,6 +114,30 @@ static async Task TestCancellationAsync()
     Assert(stopwatch.Elapsed < TimeSpan.FromSeconds(3), $"取消必须在三秒内结束，实际 {stopwatch.Elapsed}");
 }
 
+static async Task TestPreciseTerminationByIdAsync()
+{
+    using var process = Process.Start(new ProcessStartInfo
+    {
+        FileName = ResolvePowerShell(),
+        Arguments = "-NoProfile -Command Start-Sleep -Seconds 30",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+    }) ?? throw new InvalidOperationException("无法启动精确终止测试进程。");
+
+    var identity = ProcessIdentity.Capture(process, ResolvePowerShell());
+    var staleIdentity = identity with { StartTimeUtcTicks = identity.StartTimeUtcTicks + 1 };
+    var staleTreatedAsExited = await PowerShellProcessRunner.TryTerminateProcessTreeAsync(
+        staleIdentity, TimeSpan.FromSeconds(3));
+    process.Refresh();
+    Assert(staleTreatedAsExited && !process.HasExited,
+        "身份不匹配的复用 PID 必须视为原进程已退出，绝不能结束当前进程");
+
+    var terminated = await PowerShellProcessRunner.TryTerminateProcessTreeAsync(
+        identity, TimeSpan.FromSeconds(3));
+    process.Refresh();
+    Assert(terminated && process.HasExited, "按 PID 强制结束后，测试进程必须确认退出");
+}
+
 static async Task TestTimeoutAsync()
 {
     var fixture = Path.Combine(FindRepoRoot(), "tests", "fixtures", "WaitUntilCancelled.ps1");
@@ -160,6 +188,20 @@ static void TestOperationUiStates()
     Assert(!stopOverridesInstall.Install && !stopOverridesInstall.Start && !stopOverridesInstall.Stop &&
            !stopOverridesInstall.Update && !stopOverridesInstall.Uninstall && stopOverridesInstall.Status.Contains("正在关闭", StringComparison.Ordinal),
         "取消安装并关闭时，正在关闭必须覆盖正在安装且所有按钮保持禁用");
+
+    var terminationFailed = OperationUiState.ForTerminationFailure("安装");
+    Assert(!terminationFailed.Install && !terminationFailed.Start && terminationFailed.Stop &&
+           !terminationFailed.Update && !terminationFailed.Uninstall,
+        "操作进程无法终止时只能保留关闭入口");
+}
+
+static void TestManagerExecutableArgumentQuoting()
+{
+    var method = typeof(MainForm).GetMethod("QuoteProcessArgument", BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new MissingMethodException("MainForm.QuoteProcessArgument");
+    var quoted = (string?)method.Invoke(null, new object[] { @"D:\Folder With Space\DeepSeek Harness 控制台.exe" });
+    Assert(quoted == "\"D:\\Folder With Space\\DeepSeek Harness 控制台.exe\"",
+        "传给 pwsh.exe 的管理器路径必须用 Windows 进程参数可识别的双引号包围");
 }
 
 static async Task TestStopWaitsForActiveOperationAsync()
@@ -225,13 +267,13 @@ static async Task TestFinalizationForEveryOutcomeAsync()
 {
     using var cancelled = new CancellationTokenSource();
     cancelled.Cancel();
-    var scenarios = new (string Name, Func<Task> Operation)[]
+    var scenarios = new (string Name, Func<Task<int>> Operation, int? ExpectedResult)[]
     {
-        ("success", () => Task.CompletedTask),
-        ("nonzero", () => Task.CompletedTask),
-        ("exception", () => Task.FromException(new InvalidOperationException("expected"))),
-        ("timeout", () => Task.FromException(new TimeoutException("expected"))),
-        ("cancelled", () => Task.FromCanceled(cancelled.Token)),
+        ("success", () => Task.FromResult(0), 0),
+        ("nonzero", () => Task.FromResult(23), 23),
+        ("exception", () => Task.FromException<int>(new InvalidOperationException("expected")), null),
+        ("timeout", () => Task.FromException<int>(new TimeoutException("expected")), null),
+        ("cancelled", () => Task.FromCanceled<int>(cancelled.Token), null),
     };
 
     foreach (var scenario in scenarios)
@@ -240,7 +282,7 @@ static async Task TestFinalizationForEveryOutcomeAsync()
         OperationUiState? finalState = null;
         try
         {
-            await OperationExecutionCoordinator.RunWithFinalizerAsync(
+            var result = await OperationExecutionCoordinator.RunWithFinalizerAsync(
                 scenario.Operation,
                 () =>
                 {
@@ -248,6 +290,7 @@ static async Task TestFinalizationForEveryOutcomeAsync()
                     finalState = OperationUiState.ForIdle(InstallationCondition.Complete, httpStatus: 200);
                     return Task.CompletedTask;
                 });
+            Assert(result == scenario.ExpectedResult, $"{scenario.Name} 结果必须原样穿过操作协调器");
         }
         catch (Exception) when (scenario.Name is "exception" or "timeout" or "cancelled")
         {

@@ -2,11 +2,11 @@ namespace HarnessControl;
 
 internal static class OperationExecutionCoordinator
 {
-    public static async Task RunWithFinalizerAsync(Func<Task> operation, Func<Task> finalizer)
+    public static async Task<T> RunWithFinalizerAsync<T>(Func<Task<T>> operation, Func<Task> finalizer)
     {
         try
         {
-            await operation();
+            return await operation();
         }
         finally
         {

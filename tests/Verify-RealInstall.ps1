@@ -197,9 +197,16 @@ finally {
     if ($null -ne $process -and -not $process.HasExited) {
         [void]$process.CloseMainWindow()
         if (-not $process.WaitForExit(5000)) {
-            Write-Warning "候选管理器未在五秒内关闭，正在精确结束测试创建的 PID $($process.Id)。"
-            Stop-Process -Id $process.Id -Force -ErrorAction Stop
-            [void]$process.WaitForExit(5000)
+            $process.Refresh()
+            if (-not $process.HasExited) {
+                Write-Warning "候选管理器未在五秒内关闭，正在精确结束测试创建的 PID $($process.Id)。"
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                [void]$process.WaitForExit(5000)
+                $process.Refresh()
+                if (-not $process.HasExited) {
+                    Write-Warning "测试创建的管理器 PID $($process.Id) 仍未退出，请手动检查。"
+                }
+            }
         }
     }
 }

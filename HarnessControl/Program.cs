@@ -40,6 +40,7 @@ internal sealed class MainForm : Form
     private string? _activeAction;
     private bool _activeAllowStop;
     private bool _stopInProgress;
+    private ProcessIdentity? _terminationFailureIdentity;
 
     private static string HarnessRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeepSeekHarness");
     private static string ProfileRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "profiles");
@@ -141,7 +142,8 @@ internal sealed class MainForm : Form
             Append("正在准备内置安装资源…");
             var installer = await Task.Run(EnsureInstallerPayload);
             Append("安装资源准备完成，开始安装或续装 DeepSeek Harness。");
-            return await ExecutePowerShellAsync(installer, string.Empty, "安装");
+            var arguments = $"-ManagerExecutablePath {QuoteProcessArgument(Application.ExecutablePath)}";
+            return await ExecutePowerShellAsync(installer, arguments, "安装");
         }, allowStop: true);
     }
 
@@ -153,17 +155,20 @@ internal sealed class MainForm : Form
             return;
         }
 
-        if (_activeCancellation is not null)
+        if (_activeCancellation is not null || _terminationFailureIdentity is not null)
         {
             _stopInProgress = true;
-            Append($"正在取消“{_activeAction}”操作，随后关闭 DeepSeek…");
-            try
+            if (_activeCancellation is not null)
             {
-                _activeCancellation.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-                // The active operation may have finished between the check and cancellation.
+                Append($"正在取消“{_activeAction}”操作，随后关闭 DeepSeek…");
+                try
+                {
+                    _activeCancellation.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The active operation may have finished between the check and cancellation.
+                }
             }
 
             SetStoppingUi();
@@ -171,12 +176,17 @@ internal sealed class MainForm : Form
             {
                 await OperationStopCoordinator.RunAfterActiveOperationAsync(_operationGate, async () =>
                 {
+                    if (!await RecoverTerminationFailureAsync()) return;
                     var stopExitCode = await ExecutePowerShellAsync(
                         LauncherPath("Stop-DeepSeekHarness.ps1"), "-PassThru", "关闭", CancellationToken.None);
                     Append(stopExitCode == 0
                         ? "关闭命令已完成。"
                         : $"关闭失败，退出码：{stopExitCode}。请查看上方日志。");
                 });
+            }
+            catch (ProcessTerminationException ex)
+            {
+                RecordTerminationFailure("关闭", ex);
             }
             catch (Exception ex)
             {
@@ -185,7 +195,11 @@ internal sealed class MainForm : Form
             finally
             {
                 _stopInProgress = false;
-                if (_activeAction is null)
+                if (_terminationFailureIdentity is not null)
+                {
+                    ApplyUiState(OperationUiState.ForTerminationFailure(_activeAction ?? "关闭"));
+                }
+                else if (_activeAction is null)
                 {
                     await RefreshStatusSafelyAsync();
                 }
@@ -197,17 +211,31 @@ internal sealed class MainForm : Form
         try
         {
             BeginOperation("关闭", allowStop: false);
-            await ExecutePowerShellAsync(LauncherPath("Stop-DeepSeekHarness.ps1"), "-PassThru", "关闭");
+            try
+            {
+                await ExecutePowerShellAsync(LauncherPath("Stop-DeepSeekHarness.ps1"), "-PassThru", "关闭");
+            }
+            catch (ProcessTerminationException ex)
+            {
+                RecordTerminationFailure("关闭", ex);
+            }
         }
         finally
         {
             try
             {
-                EndOperation();
+                if (_terminationFailureIdentity is null)
+                    EndOperation();
+                else
+                    ApplyUiState(OperationUiState.ForTerminationFailure(_activeAction ?? "关闭"));
             }
             finally
             {
-                try { await RefreshStatusSafelyAsync(); }
+                try
+                {
+                    if (_terminationFailureIdentity is null)
+                        await RefreshStatusSafelyAsync();
+                }
                 finally { _operationGate.Release(); }
             }
         }
@@ -312,13 +340,20 @@ internal sealed class MainForm : Form
 
     private async Task RunExclusiveAsync(string action, Func<Task<int>> operation, bool allowStop)
     {
+        if (_terminationFailureIdentity is not null)
+        {
+            Append("上一次操作进程仍未结束。请先点击“关闭 DeepSeek”完成强制清理。");
+            ApplyUiState(OperationUiState.ForTerminationFailure(_activeAction ?? action));
+            return;
+        }
+
         if (!await _operationGate.WaitAsync(0))
         {
             Append($"已有“{_activeAction ?? "其他"}”操作在执行；如需中止，请点击“关闭 DeepSeek”。");
             return;
         }
 
-        await OperationExecutionCoordinator.RunWithFinalizerAsync(
+        _ = await OperationExecutionCoordinator.RunWithFinalizerAsync(
             async () =>
             {
                 try
@@ -332,21 +367,42 @@ internal sealed class MainForm : Form
                         Append($"{action}完成。");
                     else
                         Append($"{action}失败，退出码：{exitCode}。请查看上方日志或桌面报告。");
+                    return exitCode;
+                }
+                catch (ProcessTerminationException ex)
+                {
+                    RecordTerminationFailure(action, ex);
+                    return -1;
                 }
                 catch (Exception ex)
                 {
                     Append($"{action}异常：{ex.Message}");
+                    return -1;
                 }
             },
             async () =>
             {
                 try
                 {
-                    EndOperation();
+                    if (_terminationFailureIdentity is not null)
+                    {
+                        _activeCancellation?.Dispose();
+                        _activeCancellation = null;
+                        _activeAllowStop = true;
+                        ApplyUiState(OperationUiState.ForTerminationFailure(_activeAction ?? action));
+                    }
+                    else
+                    {
+                        EndOperation();
+                    }
                 }
                 finally
                 {
-                    try { await RefreshStatusSafelyAsync(); }
+                    try
+                    {
+                        if (_terminationFailureIdentity is null)
+                            await RefreshStatusSafelyAsync();
+                    }
                     finally { _operationGate.Release(); }
                 }
             });
@@ -365,6 +421,37 @@ internal sealed class MainForm : Form
         {
             return false;
         }
+    }
+
+    private async Task<bool> RecoverTerminationFailureAsync()
+    {
+        if (_terminationFailureIdentity is not ProcessIdentity identity) return true;
+
+        Append($"正在核验并结束未能中止的操作进程 PID {identity.ProcessId}…");
+        var terminated = await PowerShellProcessRunner.TryTerminateProcessTreeAsync(
+            identity, TimeSpan.FromSeconds(5));
+        if (!terminated)
+        {
+            ApplyUiState(OperationUiState.ForTerminationFailure(_activeAction ?? "操作"));
+            Append($"仍无法安全结束 PID {identity.ProcessId}。为避免并发损坏，其他按钮继续保持禁用。");
+            return false;
+        }
+
+        Append("已确认原操作进程退出，继续执行 DeepSeek 关闭命令。");
+        _terminationFailureIdentity = null;
+        EndOperation();
+        return true;
+    }
+
+    private void RecordTerminationFailure(string action, ProcessTerminationException exception)
+    {
+        _terminationFailureIdentity = exception.Identity;
+        _activeAction = action;
+        _activeAllowStop = true;
+        _activeCancellation?.Dispose();
+        _activeCancellation = null;
+        ApplyUiState(OperationUiState.ForTerminationFailure(action));
+        Append($"{action}异常：{exception.Message}");
     }
 
     private async Task<int> ExecutePowerShellAsync(
@@ -541,6 +628,11 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
             ApplyUiState(OperationUiState.ForStopping());
             return;
         }
+        if (_terminationFailureIdentity is not null)
+        {
+            ApplyUiState(OperationUiState.ForTerminationFailure(_activeAction ?? "操作"));
+            return;
+        }
         if (_activeAction is not null)
         {
             ApplyUiState(OperationUiState.ForActivity(_activeAction, _activeAllowStop, _stopInProgress));
@@ -558,8 +650,16 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
         }
         catch (Exception ex)
         {
-            ApplyUiState(OperationUiState.ForIdle(GetInstallationCondition(), httpStatus: 0));
-            Append($"刷新状态失败，已恢复操作按钮：{ex.Message}");
+            if (_terminationFailureIdentity is not null)
+            {
+                ApplyUiState(OperationUiState.ForTerminationFailure(_activeAction ?? "操作"));
+                Append($"刷新状态失败；未结束的操作进程仍受保护：{ex.Message}");
+            }
+            else
+            {
+                ApplyUiState(OperationUiState.ForIdle(GetInstallationCondition(), httpStatus: 0));
+                Append($"刷新状态失败，已恢复操作按钮：{ex.Message}");
+            }
         }
     }
 
@@ -628,6 +728,8 @@ if ($matches.Count -eq 0) { Write-Output '未发现残留 Harness 进程。' }
         }
         return powerShell7;
     }
+
+    private static string QuoteProcessArgument(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
 
     private void Append(string text)
     {
