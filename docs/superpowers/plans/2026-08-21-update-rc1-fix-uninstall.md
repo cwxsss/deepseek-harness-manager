@@ -35,5 +35,5 @@
 
 - [x] 使用仓库内 .NET SDK 执行 Release 构建。
 - [x] 确认 `git diff --check`、工作区状态和远端基线。
-- [ ] 提交变更并推送 `main`。
-- [ ] 推送后重新确认本地 `main` 与 `origin/main` 同步。
+- [x] 提交变更并推送 `main`。
+- [x] 推送后重新确认本地 `main` 与 `origin/main` 同步。
