@@ -61,9 +61,8 @@ if ($Repair) {
             Write-InstallLog '未发现历史 VBS 桌面入口。'
         }
         Write-InstallLog '重新启动服务并执行健康检查。'
-        $startOutput = & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $launcherRoot 'Start-DeepSeekHarness.ps1') -PassThru 2>&1
+        $startOutput = & (Join-Path $launcherRoot 'Start-DeepSeekHarness.ps1') -PassThru 2>&1
         $startOutput | ForEach-Object { Write-InstallLog ("启动日志：" + $_.ToString()) }
-        if ($LASTEXITCODE -ne 0) { throw "启动脚本失败，退出码：$LASTEXITCODE" }
         if ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 'http://127.0.0.1:3080/').StatusCode -ne 200) { throw '修复后的服务健康检查失败。' }
         Write-InstallLog '修复完成，服务健康检查通过（HTTP 200）。'
         Save-InstallReport
@@ -176,8 +175,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $payloadRoot 'DeepSeek Harness 控制台.exe') -Destination $desktopController -Force
     if (-not $NoLaunch) {
         Write-InstallLog '首次启动并验证本机服务（首次加载插件最长可能需要 120 秒）。'
-        & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $launcherRoot 'Start-DeepSeekHarness.ps1') -PassThru 2>&1 | ForEach-Object { Write-InstallLog ("启动日志：" + $_.ToString()) }
-        if ($LASTEXITCODE -ne 0) { throw "启动脚本失败，退出码：$LASTEXITCODE" }
+        & (Join-Path $launcherRoot 'Start-DeepSeekHarness.ps1') -PassThru 2>&1 | ForEach-Object { Write-InstallLog ("启动日志：" + $_.ToString()) }
         if ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 'http://127.0.0.1:3080/').StatusCode -ne 200) { throw '服务健康检查失败。' }
     }
     $coreVersion = (Get-Content -LiteralPath (Join-Path $ProfileRoot 'node_modules\@deepseek-ai\dsh\package.json') -Raw | ConvertFrom-Json).version
